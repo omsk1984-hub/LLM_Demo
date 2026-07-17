@@ -3,16 +3,15 @@ namespace LLM_Demo.Infrastructure.Auth;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 public sealed class JwtTokenService
 {
     private readonly JwtOptions _options;
 
-    public JwtTokenService(IOptions<JwtOptions> options)
+    public JwtTokenService(JwtOptions options)
     {
-        _options = options.Value;
+        _options = options;
     }
 
     public string GenerateToken(string userId, string[] roles)

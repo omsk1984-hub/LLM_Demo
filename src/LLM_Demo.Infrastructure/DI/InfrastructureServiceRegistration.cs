@@ -1,5 +1,6 @@
 namespace LLM_Demo.Infrastructure.DI;
 
+using LLM_Demo.Domain.Tools;
 using LLM_Demo.Infrastructure.Auth;
 using LLM_Demo.Infrastructure.Persistence;
 using LLM_Demo.Infrastructure.Persistence.Repositories;
@@ -25,7 +26,15 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<ConversationRepository>();
 
         // JWT
-        services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
+        var jwtSection = configuration.GetSection(JwtOptions.SectionName);
+        var jwtOptions = new JwtOptions
+        {
+            Issuer = jwtSection["Issuer"] ?? "LLM_Demo",
+            Audience = jwtSection["Audience"] ?? "LLM_Demo_Api",
+            SecretKey = jwtSection["SecretKey"] ?? "default-dev-key-please-change-in-production",
+            ExpiryInMinutes = int.TryParse(jwtSection["ExpiryInMinutes"], out var expiry) ? expiry : 60
+        };
+        services.AddSingleton(jwtOptions);
         services.AddSingleton<JwtTokenService>();
 
         // Tool Registry

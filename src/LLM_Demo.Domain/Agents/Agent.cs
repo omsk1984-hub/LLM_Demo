@@ -4,7 +4,7 @@ using LLM_Demo.Domain.Conversations;
 using LLM_Demo.Domain.Messages;
 using LLM_Demo.Domain.Tools;
 
-public sealed class Agent
+public sealed class Agent : LLM_Demo.Domain.Ownership.IOwnable
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;

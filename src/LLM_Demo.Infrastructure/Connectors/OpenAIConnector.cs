@@ -1,96 +1,179 @@
 namespace LLM_Demo.Infrastructure.Connectors;
 
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Factory for creating IChatClient instances for various LLM providers.
-/// NOTE: Microsoft.Extensions.AI.OpenAI preview package API varies.
-/// Update this when the stable package is released.
-/// For now, use Ollama or direct OpenAI HTTP client.
 /// </summary>
 public static class OpenAIConnectorFactory
 {
-    public static IChatClient CreateOpenAIClient(string apiKey, string modelId = "gpt-4")
+    /// <summary>
+    /// Creates an IChatClient configured for a generic OpenAI-compatible API via HTTP.
+    /// Supports any OpenAI-compatible endpoint (OpenAI, Azure, Ollama, etc.).
+    /// </summary>
+    public static IChatClient CreateHttpChatClient(
+        HttpClient httpClient,
+        string endpoint,
+        string modelId,
+        string? apiKey = null)
     {
-        // Placeholder — will be implemented when Microsoft.Extensions.AI.OpenAI stabilizes.
-        // The preview version requires: new OpenAI.OpenAIClient(apiKey).AsChatClient(modelId)
-        throw new NotImplementedException(
-            "OpenAI connector requires Microsoft.Extensions.AI.OpenAI stable package. " +
-            "Use OllamaConnector or implement custom IChatClient wrapper.");
-    }
-
-    public static IChatClient CreateOllamaClient(string endpoint = "http://localhost:11434", string modelId = "llama3")
-    {
-        // Ollama exposes OpenAI-compatible API
-        var httpClient = new HttpClient { BaseAddress = new Uri(endpoint) };
-        // Return a simple wrapper — for demo purposes this shows the pattern
-        return new OllamaChatClient(httpClient, modelId);
+        return new OllamaStyleChatClient(httpClient, endpoint, modelId, apiKey);
     }
 }
 
 /// <summary>
-/// Lightweight IChatClient implementation for Ollama API.
-/// In production, replace with a full implementation or use Semantic Kernel connectors.
+/// Lightweight IChatClient implementation for OpenAI-compatible chat APIs
+/// using a simple HTTP client. Supports Ollama, OpenAI, Azure OpenAI, etc.
 /// </summary>
-internal sealed class OllamaChatClient : IChatClient
+internal sealed class OllamaStyleChatClient : IChatClient
 {
     private readonly HttpClient _httpClient;
+    private readonly string _endpoint;
     private readonly string _modelId;
+    private readonly string? _apiKey;
+    private bool _disposed;
 
-    public OllamaChatClient(HttpClient httpClient, string modelId)
+    public OllamaStyleChatClient(HttpClient httpClient, string endpoint, string modelId, string? apiKey = null)
     {
         _httpClient = httpClient;
+        _endpoint = endpoint.TrimEnd('/');
         _modelId = modelId;
+        _apiKey = apiKey;
     }
 
-    public async Task<ChatResponse> GetResponseAsync(
-        IEnumerable<ChatMessage> messages,
+    public ChatClientMetadata Metadata { get; } = new("ollama-style-chat-client");
+
+    public async Task<ChatCompletion> CompleteAsync(
+        IList<ChatMessage> chatMessages,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        // Build Ollama-compatible request body
-        var request = new
+        var requestBody = new
         {
             model = _modelId,
-            messages = messages.Select(m => new
+            messages = chatMessages.Select(m => new
             {
-                role = m.Role?.ToString()?.ToLowerInvariant() ?? "user",
+                role = ConvertRole(m.Role),
                 content = m.Text
             }),
             stream = false
         };
 
-        var json = System.Text.Json.JsonSerializer.Serialize(request);
+        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
         var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.PostAsync("/api/chat", content, cancellationToken);
+        if (!string.IsNullOrEmpty(_apiKey))
+        {
+            content.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
+        }
+
+        var response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        var result = System.Text.Json.JsonSerializer.Deserialize<OllamaChatResponse>(responseJson);
+        var result = System.Text.Json.JsonSerializer.Deserialize<ChatCompletionResponse>(responseJson);
 
-        return new ChatResponse(new ChatMessage(ChatRole.Assistant, result?.message?.content ?? ""));
+        var message = result?.choices?.FirstOrDefault()?.message;
+        return new ChatCompletion(new ChatMessage(ChatRole.Assistant, message?.content ?? ""));
     }
 
-    public IAsyncEnumerable<StreamingChatMessage> GetStreamingResponseAsync(
-        IEnumerable<ChatMessage> messages,
+    public async IAsyncEnumerable<StreamingChatCompletionUpdate> CompleteStreamingAsync(
+        IList<ChatMessage> chatMessages,
         ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException("Streaming not implemented in this demo connector.");
+        var requestBody = new
+        {
+            model = _modelId,
+            messages = chatMessages.Select(m => new
+            {
+                role = ConvertRole(m.Role),
+                content = m.Text
+            }),
+            stream = true
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        if (!string.IsNullOrEmpty(_apiKey))
+        {
+            content.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
+        }
+
+        var response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (string.IsNullOrEmpty(line) || !line.StartsWith("data: ")) continue;
+
+            var data = line[6..];
+            if (data == "[DONE]") yield break;
+
+            var chunk = System.Text.Json.JsonSerializer.Deserialize<StreamingChunkResponse>(data);
+            if (chunk?.choices?.FirstOrDefault()?.delta?.content is { } delta)
+            {
+                yield return new StreamingChatCompletionUpdate
+                {
+                    Text = delta
+                };
+            }
+        }
     }
 
-    public void Dispose() { }
-
-    public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-    private sealed class OllamaChatResponse
+    public void Dispose()
     {
-        public OllamaMessage? message { get; set; }
+        if (!_disposed)
+        {
+            _httpClient.Dispose();
+            _disposed = true;
+        }
     }
 
-    private sealed class OllamaMessage
+    public TService? GetService<TService>(object? key = null) where TService : class => null;
+
+    private static string ConvertRole(ChatRole role)
+    {
+        if (role == ChatRole.User) return "user";
+        if (role == ChatRole.Assistant) return "assistant";
+        if (role == ChatRole.System) return "system";
+        if (role == ChatRole.Tool) return "tool";
+        return "user";
+    }
+
+    // JSON response models
+    private sealed class ChatCompletionResponse
+    {
+        public Choice[]? choices { get; set; }
+    }
+
+    private sealed class Choice
+    {
+        public ResponseMessage? message { get; set; }
+    }
+
+    private sealed class ResponseMessage
+    {
+        public string? content { get; set; }
+    }
+
+    private sealed class StreamingChunkResponse
+    {
+        public StreamingChoice[]? choices { get; set; }
+    }
+
+    private sealed class StreamingChoice
+    {
+        public StreamingDelta? delta { get; set; }
+    }
+
+    private sealed class StreamingDelta
     {
         public string? content { get; set; }
     }

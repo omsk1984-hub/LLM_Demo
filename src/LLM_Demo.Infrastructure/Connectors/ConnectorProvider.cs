@@ -34,9 +34,12 @@ public sealed class ConnectorProvider : IConnectorProvider
         try
         {
             var client = GetClient(connectorName);
-            var messages = new[] { new ChatMessage(ChatRole.User, "ping") };
-            var response = await client.GetResponseAsync(messages, cancellationToken: ct);
-            return response is not null;
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.User, "Respond with just 'ok'")
+            };
+            var response = await client.CompleteAsync(messages, cancellationToken: ct);
+            return response is not null && !string.IsNullOrEmpty(response.Message?.Text);
         }
         catch (Exception ex)
         {
