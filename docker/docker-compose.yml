@@ -1,3 +1,5 @@
+name: LLM_test
+
 services:
   postgres:
     image: postgres:16
@@ -7,7 +9,7 @@ services:
       POSTGRES_USER: llm_demo_user
       POSTGRES_PASSWORD: llm_demo_pass
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +26,7 @@ services:
       POSTGRES_USER: orleans_user
       POSTGRES_PASSWORD: orleans_pass
     ports:
-      - "5433:5432"
+      - "5435:5432"
     volumes:
       - orleans_data:/var/lib/postgresql/data
     healthcheck:
