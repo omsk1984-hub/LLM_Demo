@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: llm_demo_postgres
+    environment:
+      POSTGRES_DB: llm_demo
+      POSTGRES_USER: llm_demo_user
+      POSTGRES_PASSWORD: llm_demo_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llm_demo_user -d llm_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-orleans:
+    image: postgres:16
+    container_name: llm_demo_orleans
+    environment:
+      POSTGRES_DB: orleans
+      POSTGRES_USER: orleans_user
+      POSTGRES_PASSWORD: orleans_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - orleans_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orleans_user -d orleans"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  orleans_data:
