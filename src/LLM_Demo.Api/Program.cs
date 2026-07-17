@@ -73,7 +73,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// CORS (for SSE clients)
+// CORS (for React dev server and SSE clients)
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -83,6 +83,7 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
+
 
 // Register endpoints
 builder.Services.AddScoped<AuthEndpoints>();
@@ -113,5 +114,27 @@ app.MapGroup("/api/agents").MapAgentEndpoints().RequireAuthorization();
 app.MapGroup("/api/conversations").MapConversationEndpoints().RequireAuthorization();
 app.MapGroup("/api/chat").MapChatEndpoints().RequireAuthorization();
 app.MapGroup("/api/tools").MapToolEndpoints().RequireAuthorization();
+
+// Serve React SPA static files in production
+if (!app.Environment.IsDevelopment())
+{
+    var frontendDistPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "LLM_Demo.Frontend", "dist");
+    if (Directory.Exists(frontendDistPath))
+    {
+        app.UseDefaultFiles(new DefaultFilesOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendDistPath),
+            DefaultFileNames = new[] { "index.html" }
+        });
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendDistPath)
+        });
+        app.MapFallbackToFile("index.html", new StaticFileOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendDistPath)
+        });
+    }
+}
 
 app.Run();

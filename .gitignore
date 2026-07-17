@@ -3,3 +3,8 @@
 *.gcdump
 gc_metrics.csv
 $null
+
+# Node.js / Frontend
+node_modules/
+dist/
+.vite/
