@@ -1,0 +1,1 @@
+start "LLM_Demo_Frontend" cmd /c "cd /d "%~dp0src\LLM_Demo.Frontend" && npm run dev"
