@@ -4,7 +4,9 @@ using LLM_Demo.Api.Extensions;
 using LLM_Demo.Api.Middleware;
 using LLM_Demo.Application.DI;
 using LLM_Demo.Infrastructure.DI;
+using LLM_Demo.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -135,6 +137,13 @@ if (!app.Environment.IsDevelopment())
             FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendDistPath)
         });
     }
+}
+
+// Применяем миграции и seed-данные
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await DbSeeder.SeedAsync(context);
 }
 
 app.Run();

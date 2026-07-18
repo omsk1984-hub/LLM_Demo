@@ -24,6 +24,7 @@ public static class InfrastructureServiceRegistration
         // Repositories
         services.AddScoped<AgentRepository>();
         services.AddScoped<ConversationRepository>();
+        services.AddScoped<UserRepository>();
 
         // JWT
         var jwtSection = configuration.GetSection(JwtOptions.SectionName);

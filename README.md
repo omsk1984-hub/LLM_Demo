@@ -18,12 +18,12 @@ docker compose up -d
 dotnet run --project src/LLM_Demo.Api
 ```
 
-Swagger UI будет доступен по адресу: `http://localhost:5000/swagger`
+Swagger UI будет доступен по адресу: `http://localhost:5023/swagger`
 
 ### 3. Получить JWT токен
 
 ```bash
-curl -X POST http://localhost:5000/api/auth/login \
+curl -X POST http://localhost:5023/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"demo@test.com","password":"demo123"}'
 ```
@@ -31,7 +31,7 @@ curl -X POST http://localhost:5000/api/auth/login \
 ### 4. Использовать API
 
 ```bash
-curl http://localhost:5000/api/agents \
+curl http://localhost:5023/api/agents \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -190,6 +190,73 @@ services:
     ports:
       - "5433:5432"
 ```
+
+---
+
+## 📦 Миграции БД (EF Core)
+
+В проекте используется **Entity Framework Core** с **PostgreSQL**. Миграции создаются в проекте [`LLM_Demo.Infrastructure`](src/LLM_Demo.Infrastructure), а применяются автоматически при запуске API через `DbSeeder.SeedAsync()`.
+
+### Установка инструмента
+
+```bash
+dotnet tool install --global dotnet-ef
+```
+
+### Создать новую миграцию (после изменения моделей)
+
+```bash
+dotnet ef migrations add <НазваниеМиграции> --project src/LLM_Demo.Infrastructure --startup-project src/LLM_Demo.Api
+```
+
+**Пример:**
+```bash
+dotnet ef migrations add AddCategoryEntity --project src/LLM_Demo.Infrastructure --startup-project src/LLM_Demo.Api
+```
+
+### Применить миграцию к БД
+
+```bash
+dotnet ef database update --project src/LLM_Demo.Infrastructure --startup-project src/LLM_Demo.Api
+```
+
+Либо просто запустить API — миграции применятся автоматически.
+
+### Откатить последнюю миграцию
+
+```bash
+dotnet ef migrations remove --project src/LLM_Demo.Infrastructure --startup-project src/LLM_Demo.Api
+```
+
+### Полезные команды
+
+| Команда | Описание |
+|---------|----------|
+| `dotnet ef migrations list ...` | Список всех миграций |
+| `dotnet ef migrations script ...` | SQL-скрипт миграции |
+| `dotnet ef database update <Миграция> ...` | Откат/переход к конкретной миграции |
+
+> **Примечание:** Все команды должны выполняться из корня проекта (`d:/work/LLM_Demo`) с параметрами `--project src/LLM_Demo.Infrastructure --startup-project src/LLM_Demo.Api`.
+
+### Схема БД
+
+```mermaid
+erDiagram
+    User ||--o{ Conversation : owns
+    User ||--o{ Agent : owns
+    User ||--o{ RefreshToken : has
+    Agent ||--o{ SubAgentReference : parent
+    Agent ||--o{ SubAgentReference : sub
+    Conversation ||--o{ Message : contains
+```
+
+### Seed-данные
+
+При первом запуске API автоматически загружаются тестовые данные:
+
+- **Пользователь:** `demo@example.com` / `Demo123!`
+- **Агенты:** General Assistant, Copywriting Assistant, Code Reviewer
+- **Диалог:** тестовый диалог с 3 сообщениями
 
 ---
 
