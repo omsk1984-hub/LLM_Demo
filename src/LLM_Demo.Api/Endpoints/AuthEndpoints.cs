@@ -10,11 +10,16 @@ public sealed class AuthEndpoints
 {
     private readonly JwtTokenService _jwtService;
     private readonly UserRepository _userRepository;
+    private readonly JwtOptions _jwtOptions;
 
-    public AuthEndpoints(JwtTokenService jwtService, UserRepository userRepository)
+    public AuthEndpoints(
+        JwtTokenService jwtService,
+        UserRepository userRepository,
+        JwtOptions jwtOptions)
     {
         _jwtService = jwtService;
         _userRepository = userRepository;
+        _jwtOptions = jwtOptions;
     }
 
     public async Task<IResult> Login(LoginRequest request)
@@ -27,20 +32,21 @@ public sealed class AuthEndpoints
         var user = await _userRepository.GetByEmailAsync(request.Email.Trim().ToLowerInvariant());
         if (user is null)
         {
-            return Results.Unauthorized();
+            return Results.Json(new ErrorResponse("Invalid email or password"), statusCode: 401);
         }
 
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
-            return Results.Unauthorized();
+            return Results.Json(new ErrorResponse("Invalid email or password"), statusCode: 401);
         }
 
         var token = _jwtService.GenerateToken(user.Id.ToString(), ["user"]);
+        var expiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.ExpiryInMinutes);
 
         return Results.Ok(new AuthResponse(
             token,
             user.Id.ToString(),
-            DateTime.UtcNow.AddHours(1)));
+            expiresAt));
     }
 
     public async Task<IResult> Register(RegisterRequest request)
@@ -74,10 +80,11 @@ public sealed class AuthEndpoints
         await _userRepository.AddAsync(user);
 
         var token = _jwtService.GenerateToken(user.Id.ToString(), ["user"]);
+        var expiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.ExpiryInMinutes);
 
         return Results.Ok(new AuthResponse(
             token,
             user.Id.ToString(),
-            DateTime.UtcNow.AddHours(1)));
+            expiresAt));
     }
 }

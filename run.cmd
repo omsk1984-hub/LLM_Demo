@@ -12,7 +12,7 @@ if %errorlevel% neq 0 (
 )
 echo.
 echo [2/2] Запуск API + Frontend...
-echo   - Backend:  https://localhost:5001
+echo   - Backend:  http://localhost:5023
 echo   - Frontend: http://localhost:5173
 echo.
 start "LLM_Demo_API" cmd /c "cd /d "%~dp0" && dotnet run --project src\LLM_Demo.Api"
