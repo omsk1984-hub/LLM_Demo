@@ -14,7 +14,7 @@ public sealed class JwtTokenService
         _options = options;
     }
 
-    public string GenerateToken(string userId, string[] roles)
+    public string GenerateToken(string userId, string[] roles, DateTime? expires = null)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SecretKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -31,7 +31,7 @@ public sealed class JwtTokenService
             issuer: _options.Issuer,
             audience: _options.Audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_options.ExpiryInMinutes),
+            expires: expires ?? DateTime.UtcNow.AddMinutes(_options.ExpiryInMinutes),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
