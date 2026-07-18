@@ -6,7 +6,7 @@
 - **PostgreSQL 16** — база данных
 - **Docker / Docker Compose** — контейнеризация БД
 - **Polly 8** — политики повторных попыток (референс в проекте; фактическая стратегия — собственная реализация `ExponentialReconnectStrategy`)
-- **Newtonsoft.Json** — парсинг JSON сообщений бирж
+- **Newtonsoft.Json** — парсинг JSON сообщений
 - **Npgsql** — драйвер PostgreSQL для .NET
 - **WebSocket (`System.Net.WebSockets`)** — протокол для реального времени
 - **xUnit + Moq + FluentAssertions** — модульное тестирование
