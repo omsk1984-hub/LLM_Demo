@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useChatSSE } from '../hooks/useChatSSE';
 import { sendChatMessage } from '../api/chat';
+import { getConversationMessages } from '../api/conversations';
 import AgentSelector from '../components/AgentSelector';
 import ConversationList from '../components/ConversationList';
 import ChatMessages from '../components/ChatMessages';
@@ -96,11 +97,18 @@ export default function ChatPage() {
     setSelectedAgentId(agentId);
   }
 
-  function handleSelectConversation(conversationId: string) {
+  async function handleSelectConversation(conversationId: string) {
     setSelectedConversationId(conversationId);
     setMessages([]);
     clearChunks();
     stopStream();
+
+    try {
+      const history = await getConversationMessages(conversationId);
+      setMessages(history);
+    } catch {
+      // если загрузка не удалась — показываем пустой чат
+    }
   }
 
   function handleCreateConversation(conversation: Conversation) {
