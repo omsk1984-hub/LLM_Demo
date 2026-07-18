@@ -69,7 +69,15 @@ internal sealed class OllamaStyleChatClient : IChatClient
         }
 
         var response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content, cancellationToken);
-        response.EnsureSuccessStatusCode();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"LLM API returned {(int)response.StatusCode} ({response.ReasonPhrase}) " +
+                $"for endpoint '{_endpoint}/chat/completions'. " +
+                $"Response body: {errorBody}");
+        }
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
         var result = System.Text.Json.JsonSerializer.Deserialize<ChatCompletionResponse>(responseJson);
@@ -103,7 +111,15 @@ internal sealed class OllamaStyleChatClient : IChatClient
         }
 
         var response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content, cancellationToken);
-        response.EnsureSuccessStatusCode();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"LLM API returned {(int)response.StatusCode} ({response.ReasonPhrase}) " +
+                $"for endpoint '{_endpoint}/chat/completions'. " +
+                $"Response body: {errorBody}");
+        }
 
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
