@@ -25,7 +25,7 @@ Swagger UI будет доступен по адресу: `http://localhost:5023
 ```bash
 curl -X POST http://localhost:5023/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"demo@test.com","password":"demo123"}'
+  -d '{"email":"demo@example.com","password":"Demo123!"}'
 ```
 
 ### 4. Использовать API
