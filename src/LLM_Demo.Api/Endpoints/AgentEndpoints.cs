@@ -1,6 +1,6 @@
 namespace LLM_Demo.Api.Endpoints;
 
-using System.Security.Claims;
+using LLM_Demo.Api.Extensions;
 using LLM_Demo.Api.Models.Requests;
 using LLM_Demo.Api.Models.Responses;
 using LLM_Demo.Domain.Agents;
@@ -17,8 +17,8 @@ public sealed class AgentEndpoints
 
     public async Task<IResult> GetAll(HttpContext httpContext)
     {
-        var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var agents = await _agentRepository.GetByOwnerIdAsync(userId ?? "");
+        var userId = httpContext.GetUserId();
+        var agents = await _agentRepository.GetByOwnerIdAsync(userId);
         return Results.Ok(agents);
     }
 
@@ -33,14 +33,14 @@ public sealed class AgentEndpoints
 
     public async Task<IResult> Create(CreateAgentRequest request, HttpContext httpContext)
     {
-        var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId = httpContext.GetUserId();
 
         var agent = new Agent
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
             SystemPrompt = request.SystemPrompt,
-            OwnerId = userId ?? "",
+            OwnerId = userId,
             Status = AgentStatus.Idle
         };
 

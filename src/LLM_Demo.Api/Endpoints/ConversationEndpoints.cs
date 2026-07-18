@@ -1,6 +1,6 @@
 namespace LLM_Demo.Api.Endpoints;
 
-using System.Security.Claims;
+using LLM_Demo.Api.Extensions;
 using LLM_Demo.Api.Models.Responses;
 using LLM_Demo.Domain.Conversations;
 using LLM_Demo.Infrastructure.Persistence.Repositories;
@@ -16,8 +16,8 @@ public sealed class ConversationEndpoints
 
     public async Task<IResult> GetAll(HttpContext httpContext)
     {
-        var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var conversations = await _conversationRepository.GetByOwnerIdAsync(userId ?? "");
+        var userId = httpContext.GetUserId();
+        var conversations = await _conversationRepository.GetByOwnerIdAsync(userId);
         return Results.Ok(conversations);
     }
 
@@ -32,13 +32,13 @@ public sealed class ConversationEndpoints
 
     public async Task<IResult> Create(HttpContext httpContext)
     {
-        var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId = httpContext.GetUserId();
 
         var conversation = new Conversation
         {
             Id = Guid.NewGuid(),
             Title = $"Conversation {DateTime.UtcNow:yyyy-MM-dd HH:mm}",
-            OwnerId = userId ?? "",
+            OwnerId = userId,
             Status = ConversationStatus.Active
         };
 
