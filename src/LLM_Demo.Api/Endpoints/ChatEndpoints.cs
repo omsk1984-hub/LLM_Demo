@@ -17,17 +17,23 @@ public sealed class ChatEndpoints
     private readonly ConversationRepository _conversationRepository;
     private readonly IToolRegistry _toolRegistry;
     private readonly ILogger<ChatEndpoints> _logger;
+    private readonly IChatClient _chatClient;
+    private readonly ILogger<MAFAgentLoop> _loopLogger;
 
     public ChatEndpoints(
         AgentRepository agentRepository,
         ConversationRepository conversationRepository,
         IToolRegistry toolRegistry,
-        ILogger<ChatEndpoints> logger)
+        ILogger<ChatEndpoints> logger,
+        IChatClient chatClient,
+        ILogger<MAFAgentLoop> loopLogger)
     {
         _agentRepository = agentRepository;
         _conversationRepository = conversationRepository;
         _toolRegistry = toolRegistry;
         _logger = logger;
+        _chatClient = chatClient;
+        _loopLogger = loopLogger;
     }
 
     public async Task<IResult> Chat(Guid agentId, ChatRequest request, HttpContext httpContext)
@@ -49,20 +55,14 @@ public sealed class ChatEndpoints
             Content = request.Message
         });
 
-        // For demo: use a simple echo chat client if no real IChatClient is configured
-        var chatClient = httpContext.RequestServices.GetService<IChatClient>()
-            ?? new EchoChatClient();
-
-        var loopLogger = httpContext.RequestServices.GetRequiredService<ILogger<MAFAgentLoop>>();
-
         var loop = new MAFAgentLoop(
-            chatClient,
+            _chatClient,
             (toolCall, agent, ct) =>
             {
                 _logger.LogInformation("Tool called: {ToolName}", toolCall.Name);
                 return Task.FromResult(ToolResult.Success($"Executed {toolCall.Name}"));
             },
-            loopLogger);
+            _loopLogger);
 
         var result = await loop.ExecuteAsync(conversation, agent);
 
@@ -102,15 +102,10 @@ public sealed class ChatEndpoints
             return;
         }
 
-        var chatClient = httpContext.RequestServices.GetService<IChatClient>()
-            ?? new EchoChatClient();
-
-        var loopLogger = httpContext.RequestServices.GetRequiredService<ILogger<MAFAgentLoop>>();
-
         var loop = new MAFAgentLoop(
-            chatClient,
+            _chatClient,
             (toolCall, agent, ct) => Task.FromResult(ToolResult.Success($"Executed {toolCall.Name}")),
-            loopLogger);
+            _loopLogger);
 
         try
         {

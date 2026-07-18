@@ -1,5 +1,6 @@
 using System.Text;
 using LLM_Demo.Api.Endpoints;
+using Microsoft.Extensions.AI;
 using LLM_Demo.Api.Extensions;
 using LLM_Demo.Api.Middleware;
 using LLM_Demo.Application.DI;
@@ -89,6 +90,9 @@ builder.Services.AddCors(options =>
     });
 });
 
+
+// Register demo chat client as default IChatClient (can be overridden by real LLM provider)
+builder.Services.AddScoped<IChatClient>(_ => new EchoChatClient());
 
 // Register endpoints
 builder.Services.AddScoped<AuthEndpoints>();
