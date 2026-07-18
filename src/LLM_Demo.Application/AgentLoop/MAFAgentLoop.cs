@@ -1,6 +1,7 @@
 namespace LLM_Demo.Application.AgentLoop;
 
 using LLM_Demo.Domain.Agents;
+using LLM_Demo.Domain.Connectors;
 using LLM_Demo.Domain.Conversations;
 using LLM_Demo.Domain.Messages;
 using LLM_Demo.Domain.Tools;
@@ -15,21 +16,42 @@ public sealed class MAFAgentLoopOptions
 
 public sealed class MAFAgentLoop : IAgentLoop
 {
-    private readonly IChatClient _chatClient;
+    private readonly IConnectorProvider _connectorProvider;
     private readonly Func<ToolCall, Agent?, CancellationToken, Task<ToolResult>> _toolExecutor;
     private readonly MAFAgentLoopOptions _options;
     private readonly ILogger<MAFAgentLoop> _logger;
 
     public MAFAgentLoop(
-        IChatClient chatClient,
+        IConnectorProvider connectorProvider,
         Func<ToolCall, Agent?, CancellationToken, Task<ToolResult>> toolExecutor,
         ILogger<MAFAgentLoop> logger,
         MAFAgentLoopOptions? options = null)
     {
-        _chatClient = chatClient;
+        _connectorProvider = connectorProvider;
         _toolExecutor = toolExecutor;
         _logger = logger;
         _options = options ?? new MAFAgentLoopOptions();
+    }
+
+    /// <summary>
+    /// Возвращает IChatClient для указанного агента на основе его ConnectorName.
+    /// Если у агента указана ModelId, пробрасывает её через ChatOptions.
+    /// </summary>
+    private IChatClient GetChatClient(Agent agent)
+    {
+        var client = _connectorProvider.GetClient(agent.ConnectorName);
+        return client;
+    }
+
+    private static ChatOptions? BuildChatOptions(Agent agent)
+    {
+        if (string.IsNullOrWhiteSpace(agent.ModelId))
+            return null;
+
+        return new ChatOptions
+        {
+            ModelId = agent.ModelId
+        };
     }
 
     public async Task<AgentLoopResult> ExecuteAsync(
@@ -43,6 +65,9 @@ public sealed class MAFAgentLoop : IAgentLoop
             new(ChatRole.System, agent.SystemPrompt)
         };
 
+        var chatClient = GetChatClient(agent);
+        var chatOptions = BuildChatOptions(agent);
+
         var iterations = 0;
 
         while (iterations < _options.MaxIterations)
@@ -50,9 +75,10 @@ public sealed class MAFAgentLoop : IAgentLoop
             ct.ThrowIfCancellationRequested();
             iterations++;
 
-            _logger.LogDebug("Agent loop iteration {Iteration}/{MaxIterations}", iterations, _options.MaxIterations);
+            _logger.LogDebug("Agent loop iteration {Iteration}/{MaxIterations} for agent '{Agent}' via connector '{Connector}'",
+                iterations, _options.MaxIterations, agent.Name, agent.ConnectorName);
 
-            var response = await _chatClient.CompleteAsync(messages, cancellationToken: ct);
+            var response = await chatClient.CompleteAsync(messages, chatOptions, cancellationToken: ct);
             var reply = response.Message;
 
             messages.Add(reply);
@@ -113,7 +139,10 @@ public sealed class MAFAgentLoop : IAgentLoop
             new(ChatRole.System, agent.SystemPrompt)
         };
 
-        await foreach (var update in _chatClient.CompleteStreamingAsync(messages, cancellationToken: ct))
+        var chatClient = GetChatClient(agent);
+        var chatOptions = BuildChatOptions(agent);
+
+        await foreach (var update in chatClient.CompleteStreamingAsync(messages, chatOptions, cancellationToken: ct))
         {
             ct.ThrowIfCancellationRequested();
 

@@ -5,34 +5,31 @@ using LLM_Demo.Api.Models.Requests;
 using LLM_Demo.Api.Models.Responses;
 using LLM_Demo.Application.AgentLoop;
 using LLM_Demo.Domain.Agents;
+using LLM_Demo.Domain.Connectors;
 using LLM_Demo.Domain.Messages;
 using LLM_Demo.Domain.Tools;
 using LLM_Demo.Infrastructure.Persistence.Repositories;
-using LLM_Demo.Infrastructure.Tools;
 using Microsoft.Extensions.AI;
 
 public sealed class ChatEndpoints
 {
     private readonly AgentRepository _agentRepository;
     private readonly ConversationRepository _conversationRepository;
-    private readonly IToolRegistry _toolRegistry;
+    private readonly IConnectorProvider _connectorProvider;
     private readonly ILogger<ChatEndpoints> _logger;
-    private readonly IChatClient _chatClient;
     private readonly ILogger<MAFAgentLoop> _loopLogger;
 
     public ChatEndpoints(
         AgentRepository agentRepository,
         ConversationRepository conversationRepository,
-        IToolRegistry toolRegistry,
+        IConnectorProvider connectorProvider,
         ILogger<ChatEndpoints> logger,
-        IChatClient chatClient,
         ILogger<MAFAgentLoop> loopLogger)
     {
         _agentRepository = agentRepository;
         _conversationRepository = conversationRepository;
-        _toolRegistry = toolRegistry;
+        _connectorProvider = connectorProvider;
         _logger = logger;
-        _chatClient = chatClient;
         _loopLogger = loopLogger;
     }
 
@@ -56,7 +53,7 @@ public sealed class ChatEndpoints
         });
 
         var loop = new MAFAgentLoop(
-            _chatClient,
+            _connectorProvider,
             (toolCall, agent, ct) =>
             {
                 _logger.LogInformation("Tool called: {ToolName}", toolCall.Name);
@@ -103,7 +100,7 @@ public sealed class ChatEndpoints
         }
 
         var loop = new MAFAgentLoop(
-            _chatClient,
+            _connectorProvider,
             (toolCall, agent, ct) => Task.FromResult(ToolResult.Success($"Executed {toolCall.Name}")),
             _loopLogger);
 

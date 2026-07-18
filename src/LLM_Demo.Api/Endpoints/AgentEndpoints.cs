@@ -40,6 +40,8 @@ public sealed class AgentEndpoints
             Id = Guid.NewGuid(),
             Name = request.Name,
             SystemPrompt = request.SystemPrompt,
+            ConnectorName = request.ConnectorName ?? "default",
+            ModelId = request.ModelId ?? string.Empty,
             OwnerId = userId,
             Status = AgentStatus.Idle
         };
@@ -56,6 +58,8 @@ public sealed class AgentEndpoints
 
         if (request.Name is not null) agent.Name = request.Name;
         if (request.SystemPrompt is not null) agent.SystemPrompt = request.SystemPrompt;
+        if (request.ConnectorName is not null) agent.ConnectorName = request.ConnectorName;
+        if (request.ModelId is not null) agent.ModelId = request.ModelId;
         agent.UpdatedAt = DateTime.UtcNow;
 
         var updated = await _agentRepository.UpdateAsync(agent);

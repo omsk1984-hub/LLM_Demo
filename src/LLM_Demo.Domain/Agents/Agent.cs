@@ -14,4 +14,16 @@ public sealed class Agent : LLM_Demo.Domain.Ownership.IOwnable
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public List<ToolDefinition> Tools { get; set; } = [];
+
+    /// <summary>
+    /// Имя LLM-провайдера (например "default", "openai", "ollama").
+    /// Должно соответствовать ключу в секции LLMProviders конфигурации.
+    /// </summary>
+    public string ConnectorName { get; set; } = "default";
+
+    /// <summary>
+    /// Идентификатор модели (например "gpt-4o-mini", "llama3.1", "qwen2.5").
+    /// Передаётся в LLM-провайдер при каждом запросе.
+    /// </summary>
+    public string ModelId { get; set; } = string.Empty;
 }

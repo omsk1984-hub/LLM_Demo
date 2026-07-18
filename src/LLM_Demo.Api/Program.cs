@@ -1,6 +1,5 @@
 using System.Text;
 using LLM_Demo.Api.Endpoints;
-using Microsoft.Extensions.AI;
 using LLM_Demo.Api.Extensions;
 using LLM_Demo.Api.Middleware;
 using LLM_Demo.Application.DI;
@@ -91,9 +90,6 @@ builder.Services.AddCors(options =>
 });
 
 
-// Register demo chat client as default IChatClient (can be overridden by real LLM provider)
-builder.Services.AddScoped<IChatClient>(_ => new EchoChatClient());
-
 // Register endpoints
 builder.Services.AddScoped<AuthEndpoints>();
 builder.Services.AddScoped<AgentEndpoints>();
@@ -126,6 +122,7 @@ app.MapGroup("/api/agents").MapAgentEndpoints().RequireAuthorization();
 app.MapGroup("/api/conversations").MapConversationEndpoints().RequireAuthorization();
 app.MapGroup("/api/chat").MapChatEndpoints().RequireAuthorization();
 app.MapGroup("/api/tools").MapToolEndpoints().RequireAuthorization();
+app.MapGroup("/api/connectors").MapConnectorEndpoints().RequireAuthorization();
 
 // Serve React SPA static files in production
 if (!app.Environment.IsDevelopment())

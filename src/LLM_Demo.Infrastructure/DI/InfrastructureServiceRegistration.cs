@@ -1,13 +1,17 @@
 namespace LLM_Demo.Infrastructure.DI;
 
+using LLM_Demo.Domain.Connectors;
 using LLM_Demo.Domain.Tools;
 using LLM_Demo.Infrastructure.Auth;
+using LLM_Demo.Infrastructure.Connectors;
 using LLM_Demo.Infrastructure.Persistence;
 using LLM_Demo.Infrastructure.Persistence.Repositories;
 using LLM_Demo.Infrastructure.Tools;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 public static class InfrastructureServiceRegistration
 {
@@ -44,6 +48,46 @@ public static class InfrastructureServiceRegistration
             var tools = sp.GetServices<ToolDefinition>();
             return new ToolRegistry(tools);
         });
+
+        // LLM Providers — регистрируем ConnectorProvider как singleton
+        services.AddSingleton<IConnectorProvider>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<ConnectorProvider>>();
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+
+            var providers = new Dictionary<string, IChatClient>(StringComparer.OrdinalIgnoreCase);
+
+            var llmSection = configuration.GetSection(LlmProviderOptions.SectionName);
+            foreach (var child in llmSection.GetChildren())
+            {
+                var providerName = child.Key;
+                var endpoint = child["Endpoint"] ?? string.Empty;
+                var modelId = child["ModelId"] ?? string.Empty;
+                var apiKey = child["ApiKey"] ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(endpoint))
+                    continue;
+
+                var httpClient = httpClientFactory.CreateClient($"LLM_{providerName}");
+                httpClient.Timeout = TimeSpan.FromMinutes(5);
+
+                var chatClient = OpenAIConnectorFactory.CreateHttpChatClient(
+                    httpClient, endpoint, modelId, string.IsNullOrWhiteSpace(apiKey) ? null : apiKey);
+
+                providers[providerName] = chatClient;
+            }
+
+            // Добавляем EchoChatClient как fallback, если провайдеров нет
+            if (providers.Count == 0)
+            {
+                providers["default"] = new EchoChatClient();
+            }
+
+            return new ConnectorProvider(providers, logger);
+        });
+
+        // Регистрируем HttpClientFactory для LLM-провайдеров
+        services.AddHttpClient();
 
         return services;
     }

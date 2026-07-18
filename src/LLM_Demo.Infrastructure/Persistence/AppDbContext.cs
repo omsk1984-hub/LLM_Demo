@@ -29,6 +29,8 @@ public sealed class AppDbContext : DbContext
             entity.HasKey(a => a.Id);
             entity.Property(a => a.Name).HasMaxLength(256).IsRequired();
             entity.Property(a => a.SystemPrompt).HasMaxLength(8192);
+            entity.Property(a => a.ConnectorName).HasMaxLength(128).HasDefaultValue("default");
+            entity.Property(a => a.ModelId).HasMaxLength(256);
             entity.Property(a => a.OwnerId).HasMaxLength(128).IsRequired();
             entity.Property(a => a.Status).HasConversion<string>().HasMaxLength(64);
             entity.Property(a => a.CreatedAt);

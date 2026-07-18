@@ -1,6 +1,7 @@
 namespace LLM_Demo.Api.Extensions;
 
 using LLM_Demo.Api.Endpoints;
+using LLM_Demo.Domain.Connectors;
 using LLM_Demo.Infrastructure.Tools;
 
 public static class EndpointExtensions
@@ -68,6 +69,14 @@ public static class EndpointExtensions
     {
         group.MapGet("/", (IToolRegistry registry) =>
             Results.Ok(registry.GetAllTools()));
+
+        return group;
+    }
+
+    public static RouteGroupBuilder MapConnectorEndpoints(this RouteGroupBuilder group)
+    {
+        group.MapGet("/", (IConnectorProvider provider) =>
+            Results.Ok(provider.GetAvailableConnectors()));
 
         return group;
     }
