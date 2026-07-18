@@ -58,6 +58,9 @@ public static class InfrastructureServiceRegistration
             var providers = new Dictionary<string, IChatClient>(StringComparer.OrdinalIgnoreCase);
 
             var llmSection = configuration.GetSection(LlmProviderOptions.SectionName);
+            Console.WriteLine("____________________________________________");
+            logger.LogInformation("LLMProviders section loaded: {SectionPath} with {Count} child providers",
+                llmSection.Path, llmSection.GetChildren().Count());
             foreach (var child in llmSection.GetChildren())
             {
                 var providerName = child.Key;

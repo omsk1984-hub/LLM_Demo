@@ -67,7 +67,7 @@ public sealed class MAFAgentLoop : IAgentLoop
 
         var chatClient = GetChatClient(agent);
         var chatOptions = BuildChatOptions(agent);
-
+        
         var iterations = 0;
 
         while (iterations < _options.MaxIterations)
