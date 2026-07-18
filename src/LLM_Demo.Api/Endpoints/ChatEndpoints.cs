@@ -57,10 +57,10 @@ public sealed class ChatEndpoints
 
         var loop = new MAFAgentLoop(
             chatClient,
-            async (toolCall, agent, ct) =>
+            (toolCall, agent, ct) =>
             {
                 _logger.LogInformation("Tool called: {ToolName}", toolCall.Name);
-                return ToolResult.Success($"Executed {toolCall.Name}");
+                return Task.FromResult(ToolResult.Success($"Executed {toolCall.Name}"));
             },
             loopLogger);
 

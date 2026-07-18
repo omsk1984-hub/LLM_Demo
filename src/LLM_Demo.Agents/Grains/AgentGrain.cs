@@ -22,7 +22,9 @@ public sealed class AgentGrain : Grain, IAgentGrain
         return Task.CompletedTask;
     }
 
+#pragma warning disable CS1998 // Async method lacks 'await' operators
     public async Task<StreamingChunk> ExecuteTaskAsync(string task)
+#pragma warning restore CS1998
     {
         _state = _state with { Status = "Running" };
 
