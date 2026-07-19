@@ -57,6 +57,8 @@ public sealed class MAFAgentLoop : IAgentLoop
     public async Task<AgentLoopResult> ExecuteAsync(
         Conversation conversation,
         Agent agent,
+        IReadOnlyList<Message>? historyMessages = null,
+        string? newUserMessage = null,
         CancellationToken ct = default)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -64,6 +66,21 @@ public sealed class MAFAgentLoop : IAgentLoop
         {
             new(ChatRole.System, agent.SystemPrompt)
         };
+
+        // Добавляем исторические сообщения из conversation
+        if (historyMessages is { Count: > 0 })
+        {
+            foreach (var msg in historyMessages)
+            {
+                messages.Add(new ChatMessage(MapRoleToChatRole(msg.Role), msg.Content));
+            }
+        }
+
+        // Добавляем новое сообщение пользователя, если есть
+        if (!string.IsNullOrWhiteSpace(newUserMessage))
+        {
+            messages.Add(new ChatMessage(ChatRole.User, newUserMessage));
+        }
 
         var chatClient = GetChatClient(agent);
         var chatOptions = BuildChatOptions(agent);
@@ -132,12 +149,29 @@ public sealed class MAFAgentLoop : IAgentLoop
     public async IAsyncEnumerable<StreamingChunk> ExecuteStreamingAsync(
         Conversation conversation,
         Agent agent,
+        IReadOnlyList<Message>? historyMessages = null,
+        string? newUserMessage = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var messages = new List<ChatMessage>
         {
             new(ChatRole.System, agent.SystemPrompt)
         };
+
+        // Добавляем исторические сообщения из conversation
+        if (historyMessages is { Count: > 0 })
+        {
+            foreach (var msg in historyMessages)
+            {
+                messages.Add(new ChatMessage(MapRoleToChatRole(msg.Role), msg.Content));
+            }
+        }
+
+        // Добавляем новое сообщение пользователя, если есть
+        if (!string.IsNullOrWhiteSpace(newUserMessage))
+        {
+            messages.Add(new ChatMessage(ChatRole.User, newUserMessage));
+        }
 
         var chatClient = GetChatClient(agent);
         var chatOptions = BuildChatOptions(agent);
@@ -185,5 +219,13 @@ public sealed class MAFAgentLoop : IAgentLoop
         if (role == ChatRole.Assistant) return MessageRole.Assistant;
         if (role == ChatRole.Tool) return MessageRole.Tool;
         return MessageRole.User;
+    }
+
+    private static ChatRole MapRoleToChatRole(MessageRole role)
+    {
+        if (role == MessageRole.System) return ChatRole.System;
+        if (role == MessageRole.Assistant) return ChatRole.Assistant;
+        if (role == MessageRole.Tool) return ChatRole.Tool;
+        return ChatRole.User;
     }
 }

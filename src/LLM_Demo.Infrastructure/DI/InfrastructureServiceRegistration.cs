@@ -53,7 +53,6 @@ public static class InfrastructureServiceRegistration
         services.AddSingleton<IConnectorProvider>(sp =>
         {
             var logger = sp.GetRequiredService<ILogger<ConnectorProvider>>();
-            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
 
             var providers = new Dictionary<string, IChatClient>(StringComparer.OrdinalIgnoreCase);
 
@@ -70,8 +69,15 @@ public static class InfrastructureServiceRegistration
                 if (string.IsNullOrWhiteSpace(endpoint))
                     continue;
 
-                var httpClient = httpClientFactory.CreateClient($"LLM_{providerName}");
-                httpClient.Timeout = TimeSpan.FromMinutes(5);
+                // Создаём HttpClient с bypass SSL (для routerai.ru и других кастомных endpoint'ов),
+                // как в test2/Test2.Console/Program.cs
+                var httpClient = new HttpClient(new HttpClientHandler
+                {
+                    ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+                })
+                {
+                    Timeout = TimeSpan.FromMinutes(5)
+                };
 
                 var chatClient = OpenAIConnectorFactory.CreateHttpChatClient(
                     httpClient, endpoint, modelId, string.IsNullOrWhiteSpace(apiKey) ? null : apiKey);
@@ -87,9 +93,6 @@ public static class InfrastructureServiceRegistration
 
             return new ConnectorProvider(providers, logger);
         });
-
-        // Регистрируем HttpClientFactory для LLM-провайдеров
-        services.AddHttpClient();
 
         return services;
     }

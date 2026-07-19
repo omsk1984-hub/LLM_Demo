@@ -18,7 +18,7 @@ public static class OpenAIConnectorFactory
         string modelId,
         string? apiKey = null)
     {
-        return new OllamaStyleChatClient(httpClient, endpoint, modelId, apiKey);
+        return new OpenAIChatClient(httpClient, endpoint, modelId, apiKey);
     }
 }
 
@@ -26,7 +26,7 @@ public static class OpenAIConnectorFactory
 /// Lightweight IChatClient implementation for OpenAI-compatible chat APIs
 /// using a simple HTTP client. Supports Ollama, OpenAI, Azure OpenAI, etc.
 /// </summary>
-internal sealed class OllamaStyleChatClient : IChatClient
+internal sealed class OpenAIChatClient : IChatClient
 {
     private readonly HttpClient _httpClient;
     private readonly string _endpoint;
@@ -34,7 +34,7 @@ internal sealed class OllamaStyleChatClient : IChatClient
     private readonly string? _apiKey;
     private bool _disposed;
 
-    public OllamaStyleChatClient(HttpClient httpClient, string endpoint, string modelId, string? apiKey = null)
+    public OpenAIChatClient(HttpClient httpClient, string endpoint, string modelId, string? apiKey = null)
     {
         _httpClient = httpClient;
         _endpoint = endpoint.TrimEnd('/');
@@ -42,17 +42,21 @@ internal sealed class OllamaStyleChatClient : IChatClient
         _apiKey = apiKey;
     }
 
-    public ChatClientMetadata Metadata { get; } = new("ollama-style-chat-client");
+    public ChatClientMetadata Metadata { get; } = new("openai-chat-client");
 
     public async Task<ChatCompletion> CompleteAsync(
         IList<ChatMessage> chatMessages,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        var normalized = NormalizeMessages(chatMessages);
+        // ModelId из параметров метода имеет приоритет над моделью из конструктора
+        var modelId = options?.ModelId ?? _modelId;
+
         var requestBody = new
         {
-            model = _modelId,
-            messages = chatMessages.Select(m => new
+            model = modelId,
+            messages = normalized.Select(m => new
             {
                 role = ConvertRole(m.Role),
                 content = m.Text
@@ -61,27 +65,34 @@ internal sealed class OllamaStyleChatClient : IChatClient
         };
 
         var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint}/chat/completions")
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+        };
 
+        // Добавляем Authorization header на уровне запроса, как в test2/Test2.Console/Program.cs
         if (!string.IsNullOrEmpty(_apiKey))
         {
-            content.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
         }
 
-        var response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content, cancellationToken);
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var apiKeyPreview = string.IsNullOrEmpty(_apiKey)
+                ? "not configured"
+                : $"configured ({_apiKey[..Math.Min(8, _apiKey.Length)]}...)";
+
             throw new HttpRequestException(
                 $"LLM API returned {(int)response.StatusCode} ({response.ReasonPhrase}) " +
                 $"for endpoint '{_endpoint}/chat/completions'. " +
-                $"Response body: {errorBody}");
+                $"[Model: {modelId}, API Key: {apiKeyPreview}] " +
+                $"Response body: {responseBody}");
         }
 
-        var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        var result = System.Text.Json.JsonSerializer.Deserialize<ChatCompletionResponse>(responseJson);
-
+        var result = System.Text.Json.JsonSerializer.Deserialize<ChatCompletionResponse>(responseBody);
         var message = result?.choices?.FirstOrDefault()?.message;
         return new ChatCompletion(new ChatMessage(ChatRole.Assistant, message?.content ?? ""));
     }
@@ -91,10 +102,14 @@ internal sealed class OllamaStyleChatClient : IChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        var normalized = NormalizeMessages(chatMessages);
+        // ModelId из параметров метода имеет приоритет над моделью из конструктора
+        var modelId = options?.ModelId ?? _modelId;
+
         var requestBody = new
         {
-            model = _modelId,
-            messages = chatMessages.Select(m => new
+            model = modelId,
+            messages = normalized.Select(m => new
             {
                 role = ConvertRole(m.Role),
                 content = m.Text
@@ -103,21 +118,30 @@ internal sealed class OllamaStyleChatClient : IChatClient
         };
 
         var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint}/chat/completions")
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+        };
 
+        // Добавляем Authorization header на уровне запроса, как в test2/Test2.Console/Program.cs
         if (!string.IsNullOrEmpty(_apiKey))
         {
-            content.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
         }
 
-        var response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content, cancellationToken);
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var apiKeyPreview = string.IsNullOrEmpty(_apiKey)
+                ? "not configured"
+                : $"configured ({_apiKey[..Math.Min(8, _apiKey.Length)]}...)";
+
             throw new HttpRequestException(
                 $"LLM API returned {(int)response.StatusCode} ({response.ReasonPhrase}) " +
                 $"for endpoint '{_endpoint}/chat/completions'. " +
+                $"[Model: {modelId}, API Key: {apiKeyPreview}] " +
                 $"Response body: {errorBody}");
         }
 
@@ -154,6 +178,71 @@ internal sealed class OllamaStyleChatClient : IChatClient
 
     public TService? GetService<TService>(object? key = null) where TService : class => null;
 
+    /// <summary>
+    /// Нормализует список сообщений для LLM API.
+    /// 1. System-сообщение всегда должно быть первым (если есть).
+    /// 2. Consecutive сообщения с одинаковой ролью (например, два User подряд)
+    ///    объединяются в одно, т.к. многие провайдеры (SiliconFlow, Together)
+    ///    требуют строгого чередования user/assistant.
+    /// 3. Удаляет tool-сообщения, если они не следуют за assistant (некоторые API это не любят).
+    /// </summary>
+    private static List<ChatMessage> NormalizeMessages(IList<ChatMessage> messages)
+    {
+        if (messages.Count <= 1)
+            return [.. messages];
+
+        var result = new List<ChatMessage>(messages.Count);
+
+        // Сначала отделяем system message (если есть)
+        ChatMessage? system = null;
+        foreach (var msg in messages)
+        {
+            if (msg.Role == ChatRole.System)
+            {
+                system = msg;
+                break;
+            }
+        }
+
+        // System message всегда должен быть первым
+        if (system != null)
+            result.Add(system);
+
+        // Обрабатываем остальные сообщения, сливая consecutive same-role
+        ChatRole? lastRole = null;
+        foreach (var msg in messages)
+        {
+            // System уже обработан в начале
+            if (msg.Role == ChatRole.System)
+                continue;
+
+            // Если роль совпадает с предыдущей — объединяем содержимое
+            if (msg.Role == lastRole && result.Count > 0)
+            {
+                var last = result[^1];
+                // Сливаем содержимое
+                var combinedText = (last.Text ?? "") + "\n" + (msg.Text ?? "");
+                result[^1] = new ChatMessage(msg.Role, combinedText);
+                // Копируем Contents из последнего сообщения, если они есть
+                if (msg.Contents is { Count: > 0 })
+                {
+                    var combinedContents = new List<AIContent>();
+                    if (last.Contents is { Count: > 0 })
+                        combinedContents.AddRange(last.Contents);
+                    combinedContents.AddRange(msg.Contents);
+                    result[^1].Contents = combinedContents;
+                }
+            }
+            else
+            {
+                result.Add(msg);
+                lastRole = msg.Role;
+            }
+        }
+
+        return result;
+    }
+
     private static string ConvertRole(ChatRole role)
     {
         if (role == ChatRole.User) return "user";
@@ -186,10 +275,10 @@ internal sealed class OllamaStyleChatClient : IChatClient
 
     private sealed class StreamingChoice
     {
-        public StreamingDelta? delta { get; set; }
+        public Delta? delta { get; set; }
     }
 
-    private sealed class StreamingDelta
+    private sealed class Delta
     {
         public string? content { get; set; }
     }

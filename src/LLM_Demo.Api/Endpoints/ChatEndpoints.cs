@@ -43,14 +43,18 @@ public sealed class ChatEndpoints
         if (conversation is null)
             return Results.NotFound(new ErrorResponse("Conversation not found"));
 
-        // Save user message
-        await _conversationRepository.AddMessageAsync(new Message
+        // Загружаем исторические сообщения
+        var historyMessages = (await _conversationRepository.GetMessagesAsync(conversation.Id)).ToList();
+
+        // Сохраняем новое сообщение пользователя
+        var userMessage = new Message
         {
             Id = Guid.NewGuid(),
             ConversationId = conversation.Id,
             Role = MessageRole.User,
             Content = request.Message
-        });
+        };
+        await _conversationRepository.AddMessageAsync(userMessage);
 
         var loop = new MAFAgentLoop(
             _connectorProvider,
@@ -61,11 +65,15 @@ public sealed class ChatEndpoints
             },
             _loopLogger);
 
-        var result = await loop.ExecuteAsync(conversation, agent);
+        var result = await loop.ExecuteAsync(conversation, agent, historyMessages, request.Message);
 
-        // Save all messages
+        // Сохраняем только ответы ассистента (новые сообщения, которых нет в истории)
         foreach (var msg in result.Messages)
         {
+            // Пропускаем system prompt, исторические и уже сохранённое user-сообщение
+            if (msg.Role is MessageRole.System or MessageRole.User or MessageRole.Tool)
+                continue;
+
             msg.ConversationId = conversation.Id;
             await _conversationRepository.AddMessageAsync(msg);
         }
@@ -99,6 +107,9 @@ public sealed class ChatEndpoints
             return;
         }
 
+        // Загружаем исторические сообщения (новое сообщение уже сохранено через REST)
+        var historyMessages = (await _conversationRepository.GetMessagesAsync(conversation.Id)).ToList();
+
         var loop = new MAFAgentLoop(
             _connectorProvider,
             (toolCall, agent, ct) => Task.FromResult(ToolResult.Success($"Executed {toolCall.Name}")),
@@ -106,7 +117,7 @@ public sealed class ChatEndpoints
 
         try
         {
-            await foreach (var chunk in loop.ExecuteStreamingAsync(conversation, agent))
+            await foreach (var chunk in loop.ExecuteStreamingAsync(conversation, agent, historyMessages))
             {
                 var json = JsonSerializer.Serialize(chunk);
                 await WriteSseAsync(httpContext, "chunk", json);
