@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { Message } from '../types/chat';
 
 interface MessageBubbleProps {
@@ -18,7 +19,7 @@ const roleLabels: Record<string, string> = {
   Tool: 'Инструмент',
 };
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+function MessageBubble({ message }: MessageBubbleProps) {
   const style = roleStyles[message.role] ?? roleStyles.System;
   const label = roleLabels[message.role] ?? message.role;
 
@@ -33,3 +34,5 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     </div>
   );
 }
+
+export default memo(MessageBubble);

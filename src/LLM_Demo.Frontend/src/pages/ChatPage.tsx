@@ -18,9 +18,12 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const hasStreamStarted = useRef(false);
+  // Храним предыдущий streamingContent чтобы не дублировать сообщение
+  const prevContentRef = useRef('');
 
   const {
     chunks,
+    streamingContent,
     isConnected,
     error: sseError,
     startStream,
@@ -32,32 +35,35 @@ export default function ChatPage() {
     token,
   });
 
-  // Обработка завершения SSE — добавляем полное сообщение ассистента
+  // Обработка завершения SSE — добавляем полное сообщение ассистента.
+  // Используем chunks раз в 50ms (после флаша буфера), чтобы не дёргаться на каждый токен.
   useEffect(() => {
     const finalChunk = chunks.find((ch) => ch.isFinal);
-    if (finalChunk && hasStreamStarted.current) {
-      const fullContent = chunks
-        .filter((ch) => !ch.isFinal)
-        .map((ch) => ch.content)
-        .join('');
+    if (!finalChunk || !hasStreamStarted.current) return;
 
-      if (fullContent) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            conversationId: selectedConversationId!,
-            role: 'Assistant',
-            content: fullContent,
-            timestamp: new Date().toISOString(),
-          },
-        ]);
-      }
+    // Собираем полный контент только из non-final чанков
+    const fullContent = chunks
+      .filter((ch) => !ch.isFinal)
+      .map((ch) => ch.content)
+      .join('');
 
-      hasStreamStarted.current = false;
-      clearChunks();
-      setIsLoading(false);
+    if (fullContent && fullContent !== prevContentRef.current) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          conversationId: selectedConversationId!,
+          role: 'Assistant',
+          content: fullContent,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      prevContentRef.current = fullContent;
     }
+
+    hasStreamStarted.current = false;
+    clearChunks();
+    setIsLoading(false);
   }, [chunks, selectedConversationId, clearChunks]);
 
   // Сбрасываем isLoading при ошибке SSE
@@ -95,6 +101,7 @@ export default function ChatPage() {
       }
 
       // Запускаем SSE-стриминг
+      prevContentRef.current = '';
       hasStreamStarted.current = true;
       startStream();
     },
@@ -108,6 +115,7 @@ export default function ChatPage() {
   async function handleSelectConversation(conversationId: string) {
     setSelectedConversationId(conversationId);
     setMessages([]);
+    prevContentRef.current = '';
     clearChunks();
     stopStream();
 
@@ -122,6 +130,7 @@ export default function ChatPage() {
   function handleCreateConversation(conversation: Conversation) {
     setSelectedConversationId(conversation.id);
     setMessages([]);
+    prevContentRef.current = '';
     clearChunks();
   }
 
@@ -156,7 +165,7 @@ export default function ChatPage() {
           <>
             <ChatMessages
               messages={messages}
-              streamingChunks={chunks}
+              streamingContent={streamingContent}
               isLoading={isLoading}
             />
 

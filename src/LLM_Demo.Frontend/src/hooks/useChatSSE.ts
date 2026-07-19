@@ -2,6 +2,9 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { StreamingChunk } from '../types/chat';
 import { getChatStreamUrl } from '../api/chat';
 
+/** Интервал сброса буфера чанков в state (ms). 50ms ≈ 20fps — достаточно для плавного вывода текста */
+const FLUSH_INTERVAL_MS = 50;
+
 interface UseChatSSEOptions {
   agentId: string | null;
   conversationId: string | null;
@@ -10,6 +13,7 @@ interface UseChatSSEOptions {
 
 interface UseChatSSEResult {
   chunks: StreamingChunk[];
+  streamingContent: string;
   isConnected: boolean;
   error: string | null;
   startStream: () => void;
@@ -29,6 +33,36 @@ export function useChatSSE({
   // Флаг для предотвращения повторной обработки ошибки после закрытия
   const closedRef = useRef(false);
 
+  // --- Throttling: буфер чанков + таймер флаша ---
+  const chunkBufferRef = useRef<StreamingChunk[]>([]);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Принудительный сброс буфера в state */
+  const flushChunks = useCallback(() => {
+    flushTimerRef.current = null;
+    if (chunkBufferRef.current.length === 0) return;
+    setChunks((prev) => [...prev, ...chunkBufferRef.current]);
+    chunkBufferRef.current = [];
+  }, []);
+
+  /** Запланировать сброс буфера через FLUSH_INTERVAL_MS */
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current) return;
+    flushTimerRef.current = setTimeout(flushChunks, FLUSH_INTERVAL_MS);
+  }, [flushChunks]);
+
+  /** Сбросить буфер принудительно и очистить таймер */
+  const forceFlush = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    if (chunkBufferRef.current.length > 0) {
+      setChunks((prev) => [...prev, ...chunkBufferRef.current]);
+      chunkBufferRef.current = [];
+    }
+  }, []);
+
   const stopStream = useCallback(() => {
     if (eventSourceRef.current) {
       closedRef.current = true;
@@ -36,7 +70,8 @@ export function useChatSSE({
       eventSourceRef.current = null;
       setIsConnected(false);
     }
-  }, []);
+    forceFlush();
+  }, [forceFlush]);
 
   const startStream = useCallback(() => {
     if (!agentId || !conversationId || !token) return;
@@ -46,6 +81,7 @@ export function useChatSSE({
 
     setError(null);
     setChunks([]);
+    chunkBufferRef.current = [];
     closedRef.current = false;
 
     const url = getChatStreamUrl(agentId, conversationId, token);
@@ -58,13 +94,17 @@ export function useChatSSE({
     eventSource.addEventListener('chunk', (event) => {
       try {
         const chunk: StreamingChunk = JSON.parse(event.data);
-        setChunks((prev) => [...prev, chunk]);
+        chunkBufferRef.current.push(chunk);
 
+        // Если это финальный чанк — сбрасываем буфер немедленно
         if (chunk.isFinal) {
+          forceFlush();
           closedRef.current = true;
           eventSource.close();
           eventSourceRef.current = null;
           setIsConnected(false);
+        } else {
+          scheduleFlush();
         }
       } catch {
         // ignore parse errors
@@ -72,6 +112,7 @@ export function useChatSSE({
     });
 
     eventSource.addEventListener('complete', () => {
+      forceFlush();
       closedRef.current = true;
       eventSource.close();
       eventSourceRef.current = null;
@@ -79,6 +120,7 @@ export function useChatSSE({
     });
 
     eventSource.addEventListener('cancelled', () => {
+      forceFlush();
       closedRef.current = true;
       eventSource.close();
       eventSourceRef.current = null;
@@ -89,6 +131,7 @@ export function useChatSSE({
       if (closedRef.current) return;
       closedRef.current = true;
 
+      forceFlush();
       const message = (event as MessageEvent).data || 'Ошибка подключения';
       setError(message);
       eventSource.close();
@@ -108,6 +151,7 @@ export function useChatSSE({
       if (closedRef.current) return;
       closedRef.current = true;
 
+      forceFlush();
       setError('Соединение потеряно');
       setIsConnected(false);
       if (eventSourceRef.current) {
@@ -115,17 +159,29 @@ export function useChatSSE({
         eventSourceRef.current = null;
       }
     };
-  }, [agentId, conversationId, token, stopStream]);
+  }, [agentId, conversationId, token, stopStream, scheduleFlush, forceFlush]);
 
   const clearChunks = useCallback(() => {
     setChunks([]);
+    chunkBufferRef.current = [];
     setError(null);
   }, []);
+
+  // Актуальный стриминговый контент (учитывает как state, так и буфер)
+  const streamingContent = chunks
+    .concat(chunkBufferRef.current)
+    .filter((ch) => !ch.isFinal)
+    .map((ch) => ch.content)
+    .join('');
 
   // Очистка при размонтировании
   useEffect(() => {
     return () => {
       closedRef.current = true;
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -135,6 +191,7 @@ export function useChatSSE({
 
   return {
     chunks,
+    streamingContent,
     isConnected,
     error,
     startStream,

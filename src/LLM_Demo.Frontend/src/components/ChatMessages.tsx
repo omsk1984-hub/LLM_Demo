@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react';
-import type { Message, StreamingChunk } from '../types/chat';
+import type { Message } from '../types/chat';
 import MessageBubble from './MessageBubble';
 
 interface ChatMessagesProps {
   messages: Message[];
-  streamingChunks: StreamingChunk[];
+  streamingContent: string;
   isLoading: boolean;
 }
 
 export default function ChatMessages({
   messages,
-  streamingChunks,
+  streamingContent,
   isLoading,
 }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -18,12 +18,7 @@ export default function ChatMessages({
   // Авто-скролл к последнему сообщению
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingChunks]);
-
-  const streamingContent = streamingChunks
-    .filter((ch) => !ch.isFinal)
-    .map((ch) => ch.content)
-    .join('');
+  }, [messages, streamingContent]);
 
   if (messages.length === 0 && !streamingContent && !isLoading) {
     return (
