@@ -1,5 +1,6 @@
 namespace LLM_Demo.Api.Endpoints;
 
+using System.Text;
 using System.Text.Json;
 using LLM_Demo.Api.Extensions;
 using LLM_Demo.Api.Models.Requests;
@@ -116,6 +117,8 @@ public sealed class ChatEndpoints
         try
         {
             var ct = httpContext.RequestAborted;
+            var responseBuilder = new StringBuilder();
+
             await foreach (var chunk in loop.ExecuteStreamingAsync(conversation, agent, historyMessages, ct: ct))
             {
                 var json = JsonSerializer.Serialize(chunk, new JsonSerializerOptions
@@ -124,8 +127,23 @@ public sealed class ChatEndpoints
                 });
                 await WriteSseAsync(httpContext, "chunk", json);
 
+                if (!chunk.IsFinal)
+                {
+                    responseBuilder.Append(chunk.Content);
+                }
+
                 if (chunk.IsFinal)
                 {
+                    // Сохраняем ответ ассистента в БД
+                    var assistantMessage = new Message
+                    {
+                        Id = Guid.NewGuid(),
+                        ConversationId = conversation.Id,
+                        Role = MessageRole.Assistant,
+                        Content = responseBuilder.ToString()
+                    };
+                    await _conversationRepository.AddMessageAsync(assistantMessage, ct);
+
                     await WriteSseAsync(httpContext, "complete", "{}");
                 }
             }
