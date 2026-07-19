@@ -11,8 +11,10 @@ export async function sendChatMessage(
 
 /**
  * Возвращает URL для SSE-подключения к стримингу чата.
- * В production возвращает полный URL, в dev — через Vite proxy.
+ * Token передаётся как query-параметр, т.к. EventSource API
+ * не поддерживает кастомные HTTP-заголовки.
  */
-export function getChatStreamUrl(agentId: string, conversationId: string): string {
-  return `${client.defaults.baseURL}/chat/${agentId}/stream?conversationId=${conversationId}`;
+export function getChatStreamUrl(agentId: string, conversationId: string, token: string): string {
+  const base = `${client.defaults.baseURL}/chat/${agentId}/stream`;
+  return `${base}?conversationId=${encodeURIComponent(conversationId)}&token=${encodeURIComponent(token)}`;
 }

@@ -36,6 +36,14 @@ public sealed class ExceptionHandlingMiddleware
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception");
+
+            // Если ответ уже начат (например, SSE-поток), не пытаемся перезаписать заголовки
+            if (context.Response.HasStarted)
+            {
+                _logger.LogWarning("Response already started, skipping error response");
+                return;
+            }
+
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
             await WriteErrorAsync(context, "Internal Server Error",
                 context.RequestServices.GetRequiredService<IWebHostEnvironment>().IsDevelopment()

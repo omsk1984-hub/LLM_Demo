@@ -26,9 +26,12 @@ export function useChatSSE({
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  // Флаг для предотвращения повторной обработки ошибки после закрытия
+  const closedRef = useRef(false);
 
   const stopStream = useCallback(() => {
     if (eventSourceRef.current) {
+      closedRef.current = true;
       eventSourceRef.current.close();
       eventSourceRef.current = null;
       setIsConnected(false);
@@ -43,8 +46,9 @@ export function useChatSSE({
 
     setError(null);
     setChunks([]);
+    closedRef.current = false;
 
-    const url = getChatStreamUrl(agentId, conversationId);
+    const url = getChatStreamUrl(agentId, conversationId, token);
     const eventSource = new EventSource(url, {
       withCredentials: false,
     });
@@ -57,6 +61,7 @@ export function useChatSSE({
         setChunks((prev) => [...prev, chunk]);
 
         if (chunk.isFinal) {
+          closedRef.current = true;
           eventSource.close();
           eventSourceRef.current = null;
           setIsConnected(false);
@@ -67,28 +72,48 @@ export function useChatSSE({
     });
 
     eventSource.addEventListener('complete', () => {
+      closedRef.current = true;
+      eventSource.close();
+      eventSourceRef.current = null;
+      setIsConnected(false);
+    });
+
+    eventSource.addEventListener('cancelled', () => {
+      closedRef.current = true;
       eventSource.close();
       eventSourceRef.current = null;
       setIsConnected(false);
     });
 
     eventSource.addEventListener('error', (event) => {
-      const message = (event as MessageEvent).data || 'SSE connection error';
+      if (closedRef.current) return;
+      closedRef.current = true;
+
+      const message = (event as MessageEvent).data || 'Ошибка подключения';
       setError(message);
       eventSource.close();
       eventSourceRef.current = null;
       setIsConnected(false);
     });
 
+    // onopen — единственное место для отслеживания успешного подключения
     eventSource.onopen = () => {
+      if (closedRef.current) return;
       setIsConnected(true);
     };
 
+    // onerror срабатывает при любой ошибке соединения
+    // (в т.ч. когда сервер закрывает соединение после complete)
     eventSource.onerror = () => {
-      setError('Connection lost');
+      if (closedRef.current) return;
+      closedRef.current = true;
+
+      setError('Соединение потеряно');
       setIsConnected(false);
-      eventSource.close();
-      eventSourceRef.current = null;
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
     };
   }, [agentId, conversationId, token, stopStream]);
 
@@ -100,6 +125,7 @@ export function useChatSSE({
   // Очистка при размонтировании
   useEffect(() => {
     return () => {
+      closedRef.current = true;
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;

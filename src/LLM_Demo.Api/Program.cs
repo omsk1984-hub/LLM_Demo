@@ -40,6 +40,21 @@ builder.Services.AddAuthentication(options =>
             Encoding.UTF8.GetBytes(jwtSecret)),
         ClockSkew = TimeSpan.Zero
     };
+
+    // SSE/EventSource не поддерживает кастомные заголовки,
+    // поэтому принимаем токен из query-параметра для потоковых эндпоинтов
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["token"];
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 builder.Services.AddAuthorization();

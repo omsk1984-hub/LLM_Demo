@@ -60,6 +60,14 @@ export default function ChatPage() {
     }
   }, [chunks, selectedConversationId, clearChunks]);
 
+  // Сбрасываем isLoading при ошибке SSE
+  useEffect(() => {
+    if (sseError && hasStreamStarted.current) {
+      hasStreamStarted.current = false;
+      setIsLoading(false);
+    }
+  }, [sseError]);
+
   const handleSend = useCallback(
     async (text: string) => {
       if (!selectedAgentId || !selectedConversationId) return;

@@ -1,6 +1,7 @@
 namespace LLM_Demo.Api.Endpoints;
 
 using System.Text.Json;
+using LLM_Demo.Api.Extensions;
 using LLM_Demo.Api.Models.Requests;
 using LLM_Demo.Api.Models.Responses;
 using LLM_Demo.Application.AgentLoop;
@@ -43,9 +44,6 @@ public sealed class ChatEndpoints
         if (conversation is null)
             return Results.NotFound(new ErrorResponse("Conversation not found"));
 
-        // Загружаем исторические сообщения
-        var historyMessages = (await _conversationRepository.GetMessagesAsync(conversation.Id)).ToList();
-
         // Сохраняем новое сообщение пользователя
         var userMessage = new Message
         {
@@ -56,32 +54,11 @@ public sealed class ChatEndpoints
         };
         await _conversationRepository.AddMessageAsync(userMessage);
 
-        var loop = new MAFAgentLoop(
-            _connectorProvider,
-            (toolCall, agent, ct) =>
-            {
-                _logger.LogInformation("Tool called: {ToolName}", toolCall.Name);
-                return Task.FromResult(ToolResult.Success($"Executed {toolCall.Name}"));
-            },
-            _loopLogger);
+        // Просто сохраняем сообщение и возвращаем 202 Accepted.
+        // Сам LLM-запрос выполняется асинхронно через SSE-стриминг (ChatStream).
+        _logger.LogInformation("User message saved for conversation {ConversationId}. LLM response will be streamed via SSE.", conversation.Id);
 
-        var result = await loop.ExecuteAsync(conversation, agent, historyMessages, request.Message);
-
-        // Сохраняем только ответы ассистента (новые сообщения, которых нет в истории)
-        foreach (var msg in result.Messages)
-        {
-            // Пропускаем system prompt, исторические и уже сохранённое user-сообщение
-            if (msg.Role is MessageRole.System or MessageRole.User or MessageRole.Tool)
-                continue;
-
-            msg.ConversationId = conversation.Id;
-            await _conversationRepository.AddMessageAsync(msg);
-        }
-
-        return Results.Ok(new ChatResponse(
-            result.Messages,
-            result.Iterations,
-            result.Duration));
+        return Results.Accepted($"/api/chat/{agentId}/stream?conversationId={conversation.Id}");
     }
 
     public async Task ChatStream(
@@ -93,6 +70,13 @@ public sealed class ChatEndpoints
         httpContext.Response.Headers.CacheControl = "no-cache";
         httpContext.Response.Headers.Connection = "keep-alive";
 
+        var userId = httpContext.GetUserId();
+        if (string.IsNullOrEmpty(userId))
+        {
+            await WriteSseAsync(httpContext, "error", "User not authenticated");
+            return;
+        }
+
         var agent = await _agentRepository.GetByIdAsync(agentId);
         if (agent is null)
         {
@@ -100,8 +84,22 @@ public sealed class ChatEndpoints
             return;
         }
 
+        // Проверяем ownership агента
+        if (agent.OwnerId != userId)
+        {
+            await WriteSseAsync(httpContext, "error", "Agent not found");
+            return;
+        }
+
         var conversation = await _conversationRepository.GetByIdAsync(conversationId);
         if (conversation is null)
+        {
+            await WriteSseAsync(httpContext, "error", "Conversation not found");
+            return;
+        }
+
+        // Проверяем ownership беседы
+        if (conversation.OwnerId != userId)
         {
             await WriteSseAsync(httpContext, "error", "Conversation not found");
             return;
@@ -117,7 +115,8 @@ public sealed class ChatEndpoints
 
         try
         {
-            await foreach (var chunk in loop.ExecuteStreamingAsync(conversation, agent, historyMessages))
+            var ct = httpContext.RequestAborted;
+            await foreach (var chunk in loop.ExecuteStreamingAsync(conversation, agent, historyMessages, ct: ct))
             {
                 var json = JsonSerializer.Serialize(chunk);
                 await WriteSseAsync(httpContext, "chunk", json);
@@ -128,10 +127,22 @@ public sealed class ChatEndpoints
                 }
             }
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Streaming cancelled by user for conversation {ConversationId}", conversationId);
+            await WriteSseAsync(httpContext, "cancelled", "{}");
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Streaming error");
-            await WriteSseAsync(httpContext, "error", ex.Message);
+            _logger.LogError(ex, "Streaming error for conversation {ConversationId}", conversationId);
+            try
+            {
+                await WriteSseAsync(httpContext, "error", ex.Message);
+            }
+            catch
+            {
+                // Если ответ уже был отправлен, ничего не делаем
+            }
         }
     }
 
