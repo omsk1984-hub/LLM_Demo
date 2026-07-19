@@ -45,8 +45,9 @@ export function useChatSSE({
   const flushChunks = useCallback(() => {
     flushTimerRef.current = null;
     if (chunkBufferRef.current.length === 0) return;
-    setChunks((prev) => [...prev, ...chunkBufferRef.current]);
+    const snapshot = chunkBufferRef.current;
     chunkBufferRef.current = [];
+    setChunks((prev) => [...prev, ...snapshot]);
   }, []);
 
   const scheduleFlush = useCallback(() => {
@@ -60,8 +61,9 @@ export function useChatSSE({
       flushTimerRef.current = null;
     }
     if (chunkBufferRef.current.length > 0) {
-      setChunks((prev) => [...prev, ...chunkBufferRef.current]);
+      const snapshot = chunkBufferRef.current;
       chunkBufferRef.current = [];
+      setChunks((prev) => [...prev, ...snapshot]);
     }
   }, []);
 
@@ -93,9 +95,11 @@ export function useChatSSE({
     eventSource.addEventListener('chunk', (event) => {
       try {
         const chunk: StreamingChunk = JSON.parse(event.data);
+        console.log('[SSE chunk received]', chunk, '| isFinal:', chunk.isFinal);
         chunkBufferRef.current.push(chunk);
 
         if (chunk.isFinal) {
+          console.log('[SSE] isFinal=true, forceFlush + closing');
           forceFlush();
           closedRef.current = true;
           eventSource.close();
@@ -110,6 +114,7 @@ export function useChatSSE({
     });
 
     eventSource.addEventListener('complete', () => {
+      console.log('[SSE] complete event received');
       forceFlush();
       closedRef.current = true;
       eventSource.close();

@@ -18,6 +18,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const hasStreamStarted = useRef(false);
+  const wasConnectedRef = useRef(false);
   // Храним предыдущий streamingContent чтобы не дублировать сообщение
   const prevContentRef = useRef('');
 
@@ -38,7 +39,9 @@ export default function ChatPage() {
   // Обработка завершения SSE — добавляем полное сообщение ассистента.
   // Используем chunks раз в 50ms (после флаша буфера), чтобы не дёргаться на каждый токен.
   useEffect(() => {
+    console.log('[ChatPage] chunks effect fired | chunks:', chunks.length, '| hasStreamStarted:', hasStreamStarted.current);
     const finalChunk = chunks.find((ch) => ch.isFinal);
+    console.log('[ChatPage] finalChunk found:', !!finalChunk);
     if (!finalChunk || !hasStreamStarted.current) return;
 
     // Собираем полный контент только из non-final чанков
@@ -47,6 +50,7 @@ export default function ChatPage() {
       .map((ch) => ch.content)
       .join('');
 
+    console.log('[ChatPage] fullContent length:', fullContent.length, '| prevContentRef.current length:', prevContentRef.current.length);
     if (fullContent && fullContent !== prevContentRef.current) {
       setMessages((prev) => [
         ...prev,
@@ -73,6 +77,39 @@ export default function ChatPage() {
       setIsLoading(false);
     }
   }, [sseError]);
+
+  // Safety-net: если SSE-соединение закрылось, но мы не получили isFinal chunk,
+  // собираем весь накопленный контент и добавляем его как финальное сообщение.
+  // Это может случиться при обрыве соединения или если беседа уже завершена на сервере.
+  useEffect(() => {
+    if (wasConnectedRef.current && !isConnected && hasStreamStarted.current) {
+      // Собираем весь контент из чанков
+      const fullContent = chunks
+        .filter((ch) => !ch.isFinal)
+        .map((ch) => ch.content)
+        .join('');
+
+      if (fullContent && fullContent !== prevContentRef.current) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            conversationId: selectedConversationId!,
+            role: 'Assistant',
+            content: fullContent,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        prevContentRef.current = fullContent;
+      }
+
+      hasStreamStarted.current = false;
+      setIsLoading(false);
+      clearChunks();
+    }
+
+    wasConnectedRef.current = isConnected;
+  }, [isConnected, chunks, selectedConversationId, clearChunks]);
 
   const handleSend = useCallback(
     async (text: string) => {

@@ -118,7 +118,10 @@ public sealed class ChatEndpoints
             var ct = httpContext.RequestAborted;
             await foreach (var chunk in loop.ExecuteStreamingAsync(conversation, agent, historyMessages, ct: ct))
             {
-                var json = JsonSerializer.Serialize(chunk);
+                var json = JsonSerializer.Serialize(chunk, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                });
                 await WriteSseAsync(httpContext, "chunk", json);
 
                 if (chunk.IsFinal)
