@@ -1,0 +1,1 @@
+dotnet run --project test2/Test2.Console
