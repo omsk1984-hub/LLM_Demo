@@ -1,9 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { StreamingChunk } from '../types/chat';
 import { getChatStreamUrl } from '../api/chat';
 
-/** Интервал сброса буфера чанков в state (ms). 50ms ≈ 20fps — достаточно для плавного вывода текста */
-const FLUSH_INTERVAL_MS = 50;
+/** Интервал сброса буфера чанков в state (ms) */
+const CHUNK_FLUSH_INTERVAL_MS = 80;
 
 interface UseChatSSEOptions {
   agentId: string | null;
@@ -30,14 +30,18 @@ export function useChatSSE({
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
-  // Флаг для предотвращения повторной обработки ошибки после закрытия
   const closedRef = useRef(false);
 
-  // --- Throttling: буфер чанков + таймер флаша ---
+  // streamingContent вычисляем из chunks через useMemo — дешёвая операция
+  const streamingContent = useMemo(
+    () => chunks.filter((ch) => !ch.isFinal).map((ch) => ch.content).join(''),
+    [chunks],
+  );
+
+  // Буфер чанков — чтобы дёргать setChunks не на каждый токен
   const chunkBufferRef = useRef<StreamingChunk[]>([]);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** Принудительный сброс буфера в state */
   const flushChunks = useCallback(() => {
     flushTimerRef.current = null;
     if (chunkBufferRef.current.length === 0) return;
@@ -45,13 +49,11 @@ export function useChatSSE({
     chunkBufferRef.current = [];
   }, []);
 
-  /** Запланировать сброс буфера через FLUSH_INTERVAL_MS */
   const scheduleFlush = useCallback(() => {
     if (flushTimerRef.current) return;
-    flushTimerRef.current = setTimeout(flushChunks, FLUSH_INTERVAL_MS);
+    flushTimerRef.current = setTimeout(flushChunks, CHUNK_FLUSH_INTERVAL_MS);
   }, [flushChunks]);
 
-  /** Сбросить буфер принудительно и очистить таймер */
   const forceFlush = useCallback(() => {
     if (flushTimerRef.current) {
       clearTimeout(flushTimerRef.current);
@@ -76,7 +78,6 @@ export function useChatSSE({
   const startStream = useCallback(() => {
     if (!agentId || !conversationId || !token) return;
 
-    // Закрываем предыдущее подключение, если есть
     stopStream();
 
     setError(null);
@@ -85,9 +86,7 @@ export function useChatSSE({
     closedRef.current = false;
 
     const url = getChatStreamUrl(agentId, conversationId, token);
-    const eventSource = new EventSource(url, {
-      withCredentials: false,
-    });
+    const eventSource = new EventSource(url, { withCredentials: false });
 
     eventSourceRef.current = eventSource;
 
@@ -96,7 +95,6 @@ export function useChatSSE({
         const chunk: StreamingChunk = JSON.parse(event.data);
         chunkBufferRef.current.push(chunk);
 
-        // Если это финальный чанк — сбрасываем буфер немедленно
         if (chunk.isFinal) {
           forceFlush();
           closedRef.current = true;
@@ -130,7 +128,6 @@ export function useChatSSE({
     eventSource.addEventListener('error', (event) => {
       if (closedRef.current) return;
       closedRef.current = true;
-
       forceFlush();
       const message = (event as MessageEvent).data || 'Ошибка подключения';
       setError(message);
@@ -139,18 +136,14 @@ export function useChatSSE({
       setIsConnected(false);
     });
 
-    // onopen — единственное место для отслеживания успешного подключения
     eventSource.onopen = () => {
       if (closedRef.current) return;
       setIsConnected(true);
     };
 
-    // onerror срабатывает при любой ошибке соединения
-    // (в т.ч. когда сервер закрывает соединение после complete)
     eventSource.onerror = () => {
       if (closedRef.current) return;
       closedRef.current = true;
-
       forceFlush();
       setError('Соединение потеряно');
       setIsConnected(false);
@@ -166,13 +159,6 @@ export function useChatSSE({
     chunkBufferRef.current = [];
     setError(null);
   }, []);
-
-  // Актуальный стриминговый контент (учитывает как state, так и буфер)
-  const streamingContent = chunks
-    .concat(chunkBufferRef.current)
-    .filter((ch) => !ch.isFinal)
-    .map((ch) => ch.content)
-    .join('');
 
   // Очистка при размонтировании
   useEffect(() => {
