@@ -58,6 +58,26 @@ var messages = new List<ChatMessage>
     new(ChatRole.System, "You are a helpful assistant.")
 };
 
+// Если передан аргумент командной строки — используем его как вопрос и выходим
+if (args.Length > 0)
+{
+    var question = string.Join(" ", args);
+    Console.WriteLine($"You: {question}");
+
+    messages.Add(new ChatMessage(ChatRole.User, question));
+    Console.Write("Assistant: ");
+
+    await foreach (var update in chatClient.CompleteStreamingAsync(messages))
+    {
+        if (!string.IsNullOrEmpty(update.Text))
+        {
+            Console.Write(update.Text);
+        }
+    }
+    Console.WriteLine("\n");
+    return;
+}
+
 while (true)
 {
     Console.Write("You: ");
@@ -98,7 +118,7 @@ internal sealed class OpenAiConfig
 
 internal sealed class OpenAiSettings
 {
-    public string Endpoint { get; set; } = "https://routerai.ru/api/v1/chat/completions";
+    public string Endpoint { get; set; } = "https://routerai.ru/api/v1";
     public string ModelId { get; set; } = "qwen/qwen3.5-9b";
     public string ApiKey { get; set; } = "";
 }
@@ -142,10 +162,13 @@ internal sealed class DirectHttpChatClient : IChatClient
         };
 
         var json = JsonSerializer.Serialize(requestBody);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-        content.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint}/chat/completions")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
 
-        var response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content, cancellationToken);
+        var response = await _httpClient.SendAsync(request, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -176,10 +199,13 @@ internal sealed class DirectHttpChatClient : IChatClient
         };
 
         var json = JsonSerializer.Serialize(requestBody);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-        content.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint}/chat/completions")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
 
-        var response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content, cancellationToken);
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
