@@ -55,14 +55,13 @@ public sealed class DocumentEndpoints
         try
         {
             var document = await _documentService.UploadDocumentAsync(agentId, name, content, ct);
-            return Results.Created($"/api/agents/{agentId}/documents/{document.Id}", new
-            {
-                document.Id,
-                document.Name,
-                document.ContentType,
-                document.CreatedAt,
-                ChunkCount = document.Chunks.Count
-            });
+            return Results.Created($"/api/agents/{agentId}/documents/{document.Id}", new DocumentResponse(
+                Id: document.Id,
+                Name: document.Name,
+                ContentType: document.ContentType,
+                CreatedAt: document.CreatedAt,
+                ChunkCount: document.Chunks.Count
+            ));
         }
         catch (Exception ex)
         {
@@ -87,13 +86,12 @@ public sealed class DocumentEndpoints
             return Results.NotFound(new ErrorResponse("Agent not found"));
 
         var documents = await _documentService.GetDocumentsAsync(agentId);
-        return Results.Ok(documents.Select(d => new
-        {
-            d.Id,
-            d.Name,
-            d.ContentType,
-            d.CreatedAt
-        }));
+        return Results.Ok(documents.Select(d => new DocumentResponse(
+            Id: d.Id,
+            Name: d.Name,
+            ContentType: d.ContentType,
+            CreatedAt: d.CreatedAt
+        )));
     }
 
     /// <summary>
@@ -116,20 +114,18 @@ public sealed class DocumentEndpoints
         if (document is null)
             return Results.NotFound(new ErrorResponse("Document not found"));
 
-        return Results.Ok(new
-        {
-            document.Id,
-            document.Name,
-            document.ContentType,
-            document.CreatedAt,
-            Chunks = document.Chunks.Select(c => new
-            {
-                c.Id,
-                c.ChunkIndex,
-                c.Content,
-                HasEmbedding = c.Embedding is { Length: > 0 }
-            })
-        });
+        return Results.Ok(new DocumentDetailResponse(
+            Id: document.Id,
+            Name: document.Name,
+            ContentType: document.ContentType,
+            CreatedAt: document.CreatedAt,
+            Chunks: document.Chunks.Select(c => new ChunkResponse(
+                Id: c.Id,
+                ChunkIndex: c.ChunkIndex,
+                Content: c.Content,
+                HasEmbedding: c.Embedding is { Length: > 0 }
+            )).ToList()
+        ));
     }
 
     /// <summary>
@@ -181,13 +177,12 @@ public sealed class DocumentEndpoints
 
         var results = await _vectorSearchService.SearchAsync(agentId, query, topK: 10, ct);
 
-        return Results.Ok(results.Select(r => new
-        {
-            r.ChunkId,
-            r.DocumentId,
-            r.Content,
-            r.ChunkIndex,
-            r.SimilarityScore
-        }));
+        return Results.Ok(results.Select(r => new SearchResultResponse(
+            ChunkId: r.ChunkId,
+            DocumentId: r.DocumentId,
+            Content: r.Content,
+            ChunkIndex: r.ChunkIndex,
+            SimilarityScore: (double)r.SimilarityScore
+        )));
     }
 }
