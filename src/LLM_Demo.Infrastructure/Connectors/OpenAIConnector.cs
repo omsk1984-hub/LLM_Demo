@@ -53,18 +53,19 @@ internal sealed class OpenAIChatClient : IChatClient
         // ModelId из параметров метода имеет приоритет над моделью из конструктора
         var modelId = options?.ModelId ?? _modelId;
 
+        var requestMessages = normalized.Select(m => BuildMessageDto(m)).ToList();
+
         var requestBody = new
         {
             model = modelId,
-            messages = normalized.Select(m => new
-            {
-                role = ConvertRole(m.Role),
-                content = m.Text
-            }),
+            messages = requestMessages,
             stream = false
         };
 
-        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+        var json = System.Text.Json.JsonSerializer.Serialize(requestBody, new System.Text.Json.JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        });
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint}/chat/completions")
         {
             Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
@@ -93,8 +94,51 @@ internal sealed class OpenAIChatClient : IChatClient
         }
 
         var result = System.Text.Json.JsonSerializer.Deserialize<ChatCompletionResponse>(responseBody);
-        var message = result?.choices?.FirstOrDefault()?.message;
-        return new ChatCompletion(new ChatMessage(ChatRole.Assistant, message?.content ?? ""));
+        var choice = result?.choices?.FirstOrDefault();
+        var responseMessage = choice?.message;
+
+        if (responseMessage is null)
+            return new ChatCompletion(new ChatMessage(ChatRole.Assistant, ""));
+
+        // Создаём ChatMessage и добавляем tool_calls из ответа, если есть
+        var chatMessage = new ChatMessage(ChatRole.Assistant, responseMessage.content ?? "");
+
+        if (responseMessage.tool_calls is { Length: > 0 })
+        {
+            var contents = new List<AIContent>();
+            foreach (var tc in responseMessage.tool_calls)
+            {
+                if (tc.type == "function")
+                {
+                    // Парсим arguments как IDictionary<string, object?>
+                    IDictionary<string, object?>? argsDict = null;
+                    if (tc.function?.arguments is { Length: > 0 } argsJson)
+                    {
+                        try
+                        {
+                            argsDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(argsJson);
+                        }
+                        catch
+                        {
+                            // Если не удалось распарсить — передаём через AdditionalProperties
+                            var fc = new FunctionCallContent(tc.id ?? Guid.NewGuid().ToString(), tc.function?.name);
+                            fc.AdditionalProperties["_rawArguments"] = argsJson;
+                            contents.Add(fc);
+                            continue;
+                        }
+                    }
+
+                    contents.Add(new FunctionCallContent(
+                        tc.id ?? Guid.NewGuid().ToString(),
+                        tc.function?.name,
+                        arguments: argsDict));
+                }
+            }
+            if (contents.Count > 0)
+                chatMessage.Contents = contents;
+        }
+
+        return new ChatCompletion(chatMessage);
     }
 
     public async IAsyncEnumerable<StreamingChatCompletionUpdate> CompleteStreamingAsync(
@@ -106,18 +150,19 @@ internal sealed class OpenAIChatClient : IChatClient
         // ModelId из параметров метода имеет приоритет над моделью из конструктора
         var modelId = options?.ModelId ?? _modelId;
 
+        var requestMessages = normalized.Select(m => BuildMessageDto(m)).ToList();
+
         var requestBody = new
         {
             model = modelId,
-            messages = normalized.Select(m => new
-            {
-                role = ConvertRole(m.Role),
-                content = m.Text
-            }),
+            messages = requestMessages,
             stream = true
         };
 
-        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+        var json = System.Text.Json.JsonSerializer.Serialize(requestBody, new System.Text.Json.JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        });
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint}/chat/completions")
         {
             Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
@@ -288,6 +333,91 @@ internal sealed class OpenAIChatClient : IChatClient
         return "user";
     }
 
+    /// <summary>
+    /// Строит DTO для отправки одного сообщения в OpenAI-compatible API.
+    /// Для assistant-сообщений добавляет tool_calls, если есть FunctionCallContent.
+    /// Для tool-сообщений добавляет tool_call_id.
+    /// </summary>
+    private static object BuildMessageDto(ChatMessage msg)
+    {
+        var role = ConvertRole(msg.Role);
+
+        if (msg.Role == ChatRole.Assistant && msg.Contents is { Count: > 0 })
+        {
+            var toolCalls = new List<object?>();
+            foreach (var content in msg.Contents)
+            {
+                if (content is FunctionCallContent fc)
+                {
+                    string? argumentsJson = null;
+
+                    // Пытаемся получить arguments из fc.Arguments (IDictionary)
+                    if (fc.Arguments is { Count: > 0 })
+                    {
+                        argumentsJson = System.Text.Json.JsonSerializer.Serialize(fc.Arguments);
+                    }
+
+                    // Если есть _rawArguments в AdditionalProperties — используем их (из стриминга)
+                    if (argumentsJson is null && fc.AdditionalProperties?.TryGetValue("_rawArguments", out var raw) == true && raw is string rawStr)
+                    {
+                        argumentsJson = rawStr;
+                    }
+
+                    toolCalls.Add(new
+                    {
+                        id = fc.CallId ?? Guid.NewGuid().ToString(),
+                        type = "function",
+                        function = new
+                        {
+                            name = fc.Name ?? "",
+                            arguments = argumentsJson ?? ""
+                        }
+                    });
+                }
+            }
+
+            if (toolCalls.Count > 0)
+            {
+                return new
+                {
+                    role,
+                    content = msg.Text ?? "",
+                    tool_calls = toolCalls
+                };
+            }
+        }
+
+        if (msg.Role == ChatRole.Tool)
+        {
+            // Извлекаем tool_call_id из Contents (FunctionCallContent с role=Tool содержит CallId)
+            string? toolCallId = null;
+            if (msg.Contents is { Count: > 0 })
+            {
+                foreach (var content in msg.Contents)
+                {
+                    if (content is FunctionCallContent fc)
+                    {
+                        toolCallId = fc.CallId;
+                        break;
+                    }
+                }
+            }
+
+            return new
+            {
+                role,
+                content = msg.Text ?? "",
+                tool_call_id = toolCallId ?? ""
+            };
+        }
+
+        return new
+        {
+            role,
+            content = msg.Text ?? ""
+        };
+    }
+
     // JSON response models
     private sealed class ChatCompletionResponse
     {
@@ -302,6 +432,20 @@ internal sealed class OpenAIChatClient : IChatClient
     private sealed class ResponseMessage
     {
         public string? content { get; set; }
+        public ResponseToolCall[]? tool_calls { get; set; }
+    }
+
+    private sealed class ResponseToolCall
+    {
+        public string? id { get; set; }
+        public string? type { get; set; }
+        public ResponseFunction? function { get; set; }
+    }
+
+    private sealed class ResponseFunction
+    {
+        public string? name { get; set; }
+        public string? arguments { get; set; }
     }
 
     private sealed class StreamingChunkResponse

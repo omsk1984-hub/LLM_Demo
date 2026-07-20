@@ -237,10 +237,32 @@ public sealed class MAFAgentLoop : IAgentLoop
             if (toolCallAccumulators.Count > 0)
             {
                 // Создаём assistant сообщение с FunctionCallContent для сохранения контекста
+                // ВАЖНО: передаём накопленные аргументы, чтобы при повторной отправке запроса
+                // LLM API получила полные tool_calls
                 var assistantContents = new List<AIContent>();
                 foreach (var kv in toolCallAccumulators)
                 {
-                    assistantContents.Add(new FunctionCallContent(kv.Key, kv.Value.Name, arguments: null));
+                    var accumulatedArgs = kv.Value.Args.ToString();
+                    IDictionary<string, object?>? argsDict = null;
+                    if (!string.IsNullOrEmpty(accumulatedArgs))
+                    {
+                        try
+                        {
+                            argsDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(accumulatedArgs);
+                        }
+                        catch
+                        {
+                            // Если не JSON-объект, передаём через _rawArguments
+                        }
+                    }
+
+                    var fc = new FunctionCallContent(kv.Key, kv.Value.Name, arguments: argsDict);
+                    // Если не удалось распарсить как JSON, передаём сырую строку
+                    if (argsDict is null && !string.IsNullOrEmpty(accumulatedArgs))
+                    {
+                        fc.AdditionalProperties!["_rawArguments"] = accumulatedArgs;
+                    }
+                    assistantContents.Add(fc);
                 }
 
                 messages.Add(new ChatMessage(ChatRole.Assistant, fullText.ToString())
@@ -271,7 +293,12 @@ public sealed class MAFAgentLoop : IAgentLoop
                         ToolCallId = callId
                     };
 
-                    messages.Add(new ChatMessage(ChatRole.Tool, toolResult.Result));
+                    // ВАЖНО: передаём tool_call_id через Contents, чтобы BuildMessageDto
+                    // в OpenAIConnector корректно сериализовал tool-сообщение
+                    messages.Add(new ChatMessage(ChatRole.Tool, toolResult.Result)
+                    {
+                        Contents = [new FunctionCallContent(callId, name)]
+                    });
 
                     if (!toolResult.IsSuccess && _options.StopOnToolError)
                     {
@@ -308,11 +335,25 @@ public sealed class MAFAgentLoop : IAgentLoop
             {
                 if (content is FunctionCallContent fc)
                 {
+                    string? arguments = null;
+
+                    // Пытаемся получить arguments из fc.Arguments (IDictionary)
+                    if (fc.Arguments is { Count: > 0 })
+                    {
+                        arguments = System.Text.Json.JsonSerializer.Serialize(fc.Arguments);
+                    }
+
+                    // Если есть _rawArguments в AdditionalProperties — используем их
+                    if (arguments is null && fc.AdditionalProperties?.TryGetValue("_rawArguments", out var raw) == true && raw is string rawStr)
+                    {
+                        arguments = rawStr;
+                    }
+
                     toolCalls.Add(new ToolCall
                     {
                         Id = fc.CallId ?? Guid.NewGuid().ToString(),
                         Name = fc.Name,
-                        Arguments = System.Text.Json.JsonSerializer.Serialize(fc.Arguments)
+                        Arguments = arguments ?? ""
                     });
                 }
             }
