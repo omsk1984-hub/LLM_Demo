@@ -110,6 +110,7 @@ builder.Services.AddScoped<AuthEndpoints>();
 builder.Services.AddScoped<AgentEndpoints>();
 builder.Services.AddScoped<ConversationEndpoints>();
 builder.Services.AddScoped<ChatEndpoints>();
+builder.Services.AddScoped<DocumentEndpoints>();
 
 var app = builder.Build();
 
@@ -138,6 +139,7 @@ app.MapGroup("/api/conversations").MapConversationEndpoints().RequireAuthorizati
 app.MapGroup("/api/chat").MapChatEndpoints().RequireAuthorization();
 app.MapGroup("/api/tools").MapToolEndpoints().RequireAuthorization();
 app.MapGroup("/api/connectors").MapConnectorEndpoints().RequireAuthorization();
+app.MapGroup("/api/agents").MapDocumentEndpoints().RequireAuthorization();
 
 // Serve React SPA static files in production
 if (!app.Environment.IsDevelopment())

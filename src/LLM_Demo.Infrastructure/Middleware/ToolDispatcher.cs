@@ -1,5 +1,7 @@
 namespace LLM_Demo.Infrastructure.Middleware;
 
+using LLM_Demo.Application.RAG;
+using LLM_Demo.Domain.Agents;
 using LLM_Demo.Domain.Middleware;
 using LLM_Demo.Domain.Tools;
 using LLM_Demo.Infrastructure.Tools;
@@ -13,15 +15,18 @@ using Microsoft.Extensions.Logging;
 public sealed class ToolDispatcher : IToolDispatcher
 {
     private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IToolRegistry _toolRegistry;
     private readonly ILogger<ToolDispatcher> _logger;
 
     public ToolDispatcher(
         IServiceProvider serviceProvider,
+        IServiceScopeFactory scopeFactory,
         IToolRegistry toolRegistry,
         ILogger<ToolDispatcher> logger)
     {
         _serviceProvider = serviceProvider;
+        _scopeFactory = scopeFactory;
         _toolRegistry = toolRegistry;
         _logger = logger;
     }
@@ -45,8 +50,31 @@ public sealed class ToolDispatcher : IToolDispatcher
             "calculator" => ExecuteCalculator(context.ToolCall.Arguments),
             "file_system" => await ExecuteFileSystemAsync(context.ToolCall.Arguments),
             "send_safety" => await ExecuteSendSafetyAsync(context.ToolCall.Arguments),
+            "search_documents" => await ExecuteSearchDocumentsAsync(context.ToolCall.Arguments, context.Agent),
             _ => ToolResult.Failure($"Tool '{toolName}' has no handler registered.")
         };
+    }
+
+    private async Task<ToolResult> ExecuteSearchDocumentsAsync(string arguments, Agent? agent)
+    {
+        try
+        {
+            if (agent is null)
+                return ToolResult.Failure("search_documents requires an agent context.");
+
+            using var doc = System.Text.Json.JsonDocument.Parse(arguments);
+            var query = doc.RootElement.GetProperty("query").GetString() ?? "";
+
+            // VectorSearchService — Scoped, поэтому создаём scope
+            using var scope = _scopeFactory.CreateScope();
+            var vectorSearch = scope.ServiceProvider.GetRequiredService<VectorSearchService>();
+            var ragTool = new RagTool(vectorSearch);
+            return await ragTool.ExecuteAsync(arguments, agent.Id);
+        }
+        catch (Exception ex)
+        {
+            return ToolResult.Failure($"search_documents error: {ex.Message}");
+        }
     }
 
     private ToolResult ExecuteCalculator(string arguments)

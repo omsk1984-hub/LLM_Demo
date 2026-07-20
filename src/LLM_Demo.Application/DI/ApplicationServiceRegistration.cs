@@ -2,6 +2,7 @@ namespace LLM_Demo.Application.DI;
 
 using LLM_Demo.Application.Middleware;
 using LLM_Demo.Application.Ownership;
+using LLM_Demo.Application.RAG;
 using LLM_Demo.Application.SubAgents;
 using LLM_Demo.Domain.Middleware;
 using LLM_Demo.Domain.Tools;
@@ -21,6 +22,10 @@ public static class ApplicationServiceRegistration
 
         // StreamingHandler — для SSE-трансляции вызовов инструментов
         services.AddSingleton<StreamingHandler>();
+
+        // RAG Services — Scoped, т.к. зависят от IDocumentRepository (Scoped)
+        services.AddScoped<VectorSearchService>();
+        services.AddScoped<DocumentService>();
 
         // Tool Middleware (порядок регистрации = порядок выполнения)
         services.AddSingleton<IToolMiddleware, LoggingMiddleware>();

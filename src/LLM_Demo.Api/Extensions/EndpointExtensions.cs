@@ -80,4 +80,24 @@ public static class EndpointExtensions
 
         return group;
     }
+
+    public static RouteGroupBuilder MapDocumentEndpoints(this RouteGroupBuilder group)
+    {
+        group.MapPost("/{agentId:guid}/documents", async (Guid agentId, DocumentEndpoints endpoints, HttpContext http, CancellationToken ct) =>
+            await endpoints.UploadDocument(agentId, http, ct));
+
+        group.MapGet("/{agentId:guid}/documents", async (Guid agentId, DocumentEndpoints endpoints, HttpContext http) =>
+            await endpoints.ListDocuments(agentId, http));
+
+        group.MapGet("/{agentId:guid}/documents/{documentId:guid}", async (Guid agentId, Guid documentId, DocumentEndpoints endpoints, HttpContext http) =>
+            await endpoints.GetDocument(agentId, documentId, http));
+
+        group.MapDelete("/{agentId:guid}/documents/{documentId:guid}", async (Guid agentId, Guid documentId, DocumentEndpoints endpoints, HttpContext http) =>
+            await endpoints.DeleteDocument(agentId, documentId, http));
+
+        group.MapGet("/{agentId:guid}/documents/search", async (Guid agentId, string query, DocumentEndpoints endpoints, HttpContext http, CancellationToken ct) =>
+            await endpoints.SearchDocuments(agentId, query, http, ct));
+
+        return group;
+    }
 }

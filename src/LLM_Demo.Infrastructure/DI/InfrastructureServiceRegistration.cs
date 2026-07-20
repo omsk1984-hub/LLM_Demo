@@ -1,13 +1,16 @@
 namespace LLM_Demo.Infrastructure.DI;
 
 using LLM_Demo.Domain.Connectors;
+using LLM_Demo.Domain.Documents;
 using LLM_Demo.Domain.Middleware;
+using LLM_Demo.Domain.RAG;
 using LLM_Demo.Domain.Tools;
 using LLM_Demo.Infrastructure.Auth;
 using LLM_Demo.Infrastructure.Connectors;
 using LLM_Demo.Infrastructure.Middleware;
 using LLM_Demo.Infrastructure.Persistence;
 using LLM_Demo.Infrastructure.Persistence.Repositories;
+using LLM_Demo.Infrastructure.RAG;
 using LLM_Demo.Infrastructure.Tools;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
@@ -58,6 +61,37 @@ public static class InfrastructureServiceRegistration
 
         // Tool Dispatcher — диспетчеризация вызовов инструментов
         services.AddSingleton<IToolDispatcher, ToolDispatcher>();
+
+        // ── RAG / Document ─────────────────────────────────────
+        services.AddScoped<IDocumentRepository, DocumentRepository>();
+
+        // Embedding client — использует отдельную конфигурацию EmbeddingOptions
+        services.AddSingleton<IEmbeddingClient>(sp =>
+        {
+            var options = configuration
+                .GetSection(EmbeddingOptions.SectionName)
+                .Get<EmbeddingOptions>() ?? new EmbeddingOptions();
+
+            if (string.IsNullOrWhiteSpace(options.Endpoint))
+            {
+                var logger = sp.GetRequiredService<ILogger<OpenAIEmbeddingClient>>();
+                logger.LogWarning("Embedding section not configured. Using EchoEmbeddingClient fallback.");
+                return new EchoEmbeddingClient();
+            }
+
+            var httpClient = new HttpClient(new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            })
+            {
+                Timeout = TimeSpan.FromMinutes(2)
+            };
+
+            return new OpenAIEmbeddingClient(httpClient, options);
+        });
+
+        // RAG Tool definition
+        services.AddSingleton<ToolDefinition>(RagTool.Definition);
 
         // LLM Providers — регистрируем ConnectorProvider как singleton
         services.AddSingleton<IConnectorProvider>(sp =>

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using LLM_Demo.Domain.Agents;
 using LLM_Demo.Domain.Conversations;
+using LLM_Demo.Domain.Documents;
 using LLM_Demo.Domain.Messages;
 using LLM_Demo.Domain.Tools;
 using LLM_Demo.Domain.Users;
@@ -18,6 +19,8 @@ public sealed class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<SubAgentReference> SubAgentReferences => Set<SubAgentReference>();
+    public DbSet<Document> Documents => Set<Document>();
+    public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -108,6 +111,34 @@ public sealed class AppDbContext : DbContext
 
             entity.HasIndex(s => s.ParentAgentId);
             entity.HasIndex(s => s.SubAgentId);
+        });
+
+        // ── Document ────────────────────────────────────────────
+        modelBuilder.Entity<Document>(entity =>
+        {
+            entity.HasKey(d => d.Id);
+            entity.Property(d => d.Name).HasMaxLength(512).IsRequired();
+            entity.Property(d => d.ContentType).HasMaxLength(128).HasDefaultValue("text/plain");
+            entity.Property(d => d.CreatedAt);
+
+            entity.HasIndex(d => d.AgentId);
+
+            entity.HasMany(d => d.Chunks)
+                  .WithOne()
+                  .HasForeignKey(c => c.DocumentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── DocumentChunk ───────────────────────────────────────
+        modelBuilder.Entity<DocumentChunk>(entity =>
+        {
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Content).HasMaxLength(65535).IsRequired();
+            entity.Property(c => c.ChunkIndex);
+
+            entity.Property(c => c.Embedding).HasColumnType("vector(1536)");
+
+            entity.HasIndex(c => c.DocumentId);
         });
     }
 }

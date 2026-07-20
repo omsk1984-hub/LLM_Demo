@@ -2,7 +2,7 @@ name: LLM_test
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:0.8.0-pg16
     container_name: llm_demo_postgres
     environment:
       POSTGRES_DB: llm_demo
