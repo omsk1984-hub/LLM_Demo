@@ -121,8 +121,8 @@ internal sealed class OpenAIChatClient : IChatClient
                         catch
                         {
                             // Если не удалось распарсить — передаём через AdditionalProperties
-                            var fc = new FunctionCallContent(tc.id ?? Guid.NewGuid().ToString(), tc.function?.name);
-                            fc.AdditionalProperties["_rawArguments"] = argsJson;
+                            var fc = new FunctionCallContent(tc.id ?? Guid.NewGuid().ToString(), tc.function?.name ?? "unknown");
+                            (fc.AdditionalProperties ??= [])["_rawArguments"] = argsJson;
                             contents.Add(fc);
                             continue;
                         }
@@ -130,7 +130,7 @@ internal sealed class OpenAIChatClient : IChatClient
 
                     contents.Add(new FunctionCallContent(
                         tc.id ?? Guid.NewGuid().ToString(),
-                        tc.function?.name,
+                        tc.function?.name ?? "unknown",
                         arguments: argsDict));
                 }
             }
@@ -223,12 +223,12 @@ internal sealed class OpenAIChatClient : IChatClient
                             // чтобы MAFAgentLoop мог накопить фрагменты.
                             var fc = new FunctionCallContent(
                                 tc.id ?? Guid.NewGuid().ToString(),
-                                tc.function?.name,
+                                tc.function?.name ?? "unknown",
                                 arguments: null);
 
                             if (tc.function?.arguments != null)
                             {
-                                fc.AdditionalProperties["_rawArguments"] = tc.function.arguments;
+                                (fc.AdditionalProperties ??= [])["_rawArguments"] = tc.function.arguments;
                             }
 
                             contents.Add(fc);
