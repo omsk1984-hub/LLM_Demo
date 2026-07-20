@@ -1,25 +1,3 @@
-@LLM_Demo.Api_HostAddress = http://localhost:5023
-@AgentId = b1c2d3e4-f5a6-7890-abcd-ef1234567890
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMWIyYzNkNC1lNWY2LTc4OTAtYWJjZC1lZjEyMzQ1Njc4OTAiLCJqdGkiOiIxOGQ3ZmZiYi01ODM1LTQxYTItOWYxMi1iZWY5YzYyYjUyZWYiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJ1c2VyIiwiZXhwIjoyNTM0MDIyOTAwMDAsImlzcyI6IkxMTV9EZW1vIiwiYXVkIjoiTExNX0RlbW9fQXBpIn0.kPXXyixCcvmprqMlM1FrDkran5g5l0SFvHHK8nwo6AM
-### Login as demo user
-# @name login
-POST {{LLM_Demo.Api_HostAddress}}/api/auth/login
-Content-Type: application/json
-
-{
-  "email": "demo@example.com",
-  "password": "Demo123!"
-}
-
-### List all agents
-GET {{LLM_Demo.Api_HostAddress}}/api/agents
-Authorization: Bearer {{login.response.body.$.token}}
-
-### Upload random-people.jsonl as a document
-POST {{LLM_Demo.Api_HostAddress}}/api/agents/{{AgentId}}/documents?name=random-people.jsonl
-Content-Type: text/plain
-Authorization: Bearer {{login.response.body.$.token}}
-
 {"name":"Алиса Воронцова","height_cm":168,"weight_kg":58,"age":29,"city":"Москва","profession":"UX-дизайнер"}
 {"name":"Дмитрий Ковалёв","height_cm":183,"weight_kg":79,"age":34,"city":"Санкт-Петербург","profession":"DevOps-инженер"}
 {"name":"Екатерина Белова","height_cm":172,"weight_kg":63,"age":27,"city":"Новосибирск","profession":"Фронтенд-разработчик"}
@@ -70,15 +48,3 @@ Authorization: Bearer {{login.response.body.$.token}}
 {"name":"Станислав Марков","height_cm":184,"weight_kg":83,"age":41,"city":"Магадан","profession":"Инфраструктурный инженер"}
 {"name":"Валентина Осипова","height_cm":171,"weight_kg":62,"age":29,"city":"Сыктывкар","profession":"HR-специалист"}
 {"name":"Кирилл Шестаков","height_cm":180,"weight_kg":77,"age":35,"city":"Ханты-Мансийск","profession":"Cloud Architect"}
-
-### List documents for the agent
-GET {{LLM_Demo.Api_HostAddress}}/api/agents/{{AgentId}}/documents
-Authorization: Bearer {{login.response.body.$.token}}
-
-### Get document details with chunks (replace DOCUMENT_ID with actual ID)
-GET {{LLM_Demo.Api_HostAddress}}/api/agents/{{AgentId}}/documents/DOCUMENT_ID
-Authorization: Bearer {{login.response.body.$.token}}
-
-### Search documents
-GET {{LLM_Demo.Api_HostAddress}}/api/agents/{{AgentId}}/documents/search?query=разработчик
-Authorization: Bearer {{login.response.body.$.token}}
