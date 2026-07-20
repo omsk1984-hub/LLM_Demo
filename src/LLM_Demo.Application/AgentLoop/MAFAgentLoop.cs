@@ -5,6 +5,7 @@ using LLM_Demo.Domain.Connectors;
 using LLM_Demo.Domain.Conversations;
 using LLM_Demo.Domain.Messages;
 using LLM_Demo.Domain.Tools;
+using System.Text;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -175,17 +176,124 @@ public sealed class MAFAgentLoop : IAgentLoop
 
         var chatClient = GetChatClient(agent);
         var chatOptions = BuildChatOptions(agent);
+        var iterations = 0;
 
-        await foreach (var update in chatClient.CompleteStreamingAsync(messages, chatOptions, cancellationToken: ct))
+        while (iterations < _options.MaxIterations)
         {
             ct.ThrowIfCancellationRequested();
+            iterations++;
 
-            yield return new StreamingChunk
+            _logger.LogDebug("Agent loop iteration {Iteration}/{MaxIterations} for agent '{Agent}' via connector '{Connector}'",
+                iterations, _options.MaxIterations, agent.Name, agent.ConnectorName);
+
+            var fullText = new StringBuilder();
+            var toolCallAccumulators = new Dictionary<string, (string Name, StringBuilder Args)>();
+
+            // Streaming LLM ответа
+            await foreach (var update in chatClient.CompleteStreamingAsync(messages, chatOptions, cancellationToken: ct))
             {
-                Content = update.Text ?? ""
-            };
+                ct.ThrowIfCancellationRequested();
+
+                // Аккумулируем текст и сразу отдаём чанки наружу
+                if (update.Text is { Length: > 0 })
+                {
+                    fullText.Append(update.Text);
+                    yield return new StreamingChunk { Content = update.Text };
+                }
+
+                // Аккумулируем tool call updates (FunctionCallContent с _rawArguments в AdditionalProperties)
+                if (update.Contents is { Count: > 0 })
+                {
+                    foreach (var content in update.Contents)
+                    {
+                        if (content is FunctionCallContent fc)
+                        {
+                            var callId = fc.CallId ?? Guid.NewGuid().ToString();
+
+                            // Name приходит только в первом чанке для данного tool call
+                            if (!string.IsNullOrEmpty(fc.Name))
+                            {
+                                toolCallAccumulators[callId] = (fc.Name, new StringBuilder());
+                            }
+
+                            // Фрагменты аргументов приходят через AdditionalProperties["_rawArguments"]
+                            if (fc.AdditionalProperties.TryGetValue("_rawArguments", out var rawArg) &&
+                                rawArg is string argFragment &&
+                                !string.IsNullOrEmpty(argFragment))
+                            {
+                                if (!toolCallAccumulators.TryGetValue(callId, out var acc))
+                                {
+                                    acc = (fc.Name ?? "unknown", new StringBuilder());
+                                    toolCallAccumulators[callId] = acc;
+                                }
+                                acc.Args.Append(argFragment);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Если есть tool calls — выполняем их и идём на следующую итерацию
+            if (toolCallAccumulators.Count > 0)
+            {
+                // Создаём assistant сообщение с FunctionCallContent для сохранения контекста
+                var assistantContents = new List<AIContent>();
+                foreach (var kv in toolCallAccumulators)
+                {
+                    assistantContents.Add(new FunctionCallContent(kv.Key, kv.Value.Name, arguments: null));
+                }
+
+                messages.Add(new ChatMessage(ChatRole.Assistant, fullText.ToString())
+                {
+                    Contents = assistantContents
+                });
+
+                // Выполняем каждый tool
+                foreach (var kv in toolCallAccumulators)
+                {
+                    var (callId, (name, argsBuilder)) = kv;
+                    var argumentsJson = argsBuilder.ToString();
+
+                    var toolCall = new ToolCall
+                    {
+                        Id = callId,
+                        Name = name,
+                        Arguments = argumentsJson
+                    };
+
+                    _logger.LogDebug("Executing tool call: {ToolName} (id: {ToolCallId})", name, callId);
+
+                    var toolResult = await _toolExecutor(toolCall, agent, ct);
+
+                    yield return new StreamingChunk
+                    {
+                        Content = $"  {toolResult.Result}",
+                        ToolCallId = callId
+                    };
+
+                    messages.Add(new ChatMessage(ChatRole.Tool, toolResult.Result));
+
+                    if (!toolResult.IsSuccess && _options.StopOnToolError)
+                    {
+                        _logger.LogWarning("Tool execution failed: {ToolName} (id: {ToolCallId}) with error: {Error}",
+                            name, callId, toolResult.Error);
+
+                        yield return new StreamingChunk { Error = toolResult.Error ?? "Tool execution failed" };
+                        yield return new StreamingChunk { IsFinal = true };
+                        yield break;
+                    }
+                }
+
+                continue; // следующая итерация агентского цикла
+            }
+
+            // Финальный ответ — без tool calls
+            yield return new StreamingChunk { IsFinal = true };
+            yield break;
         }
 
+        // Достигнут лимит итераций
+        _logger.LogWarning("Agent loop reached max iterations ({MaxIterations})", _options.MaxIterations);
         yield return new StreamingChunk { IsFinal = true };
     }
 

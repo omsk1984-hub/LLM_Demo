@@ -157,12 +157,48 @@ internal sealed class OpenAIChatClient : IChatClient
             if (data == "[DONE]") yield break;
 
             var chunk = System.Text.Json.JsonSerializer.Deserialize<StreamingChunkResponse>(data);
-            if (chunk?.choices?.FirstOrDefault()?.delta?.content is { } delta)
+            if (chunk?.choices?.FirstOrDefault()?.delta is { } delta)
             {
-                yield return new StreamingChatCompletionUpdate
+                var update = new StreamingChatCompletionUpdate();
+
+                if (delta.content is { Length: > 0 })
                 {
-                    Text = delta
-                };
+                    update.Text = delta.content;
+                }
+
+                if (delta.tool_calls is { Length: > 0 })
+                {
+                    var contents = new List<AIContent>();
+                    foreach (var tc in delta.tool_calls)
+                    {
+                        if (tc.type == "function")
+                        {
+                            // FunctionCallContent принимает IDictionary<string,object?>? для аргументов.
+                            // Сырую JSON-строку передадим через AdditionalProperties,
+                            // чтобы MAFAgentLoop мог накопить фрагменты.
+                            var fc = new FunctionCallContent(
+                                tc.id ?? Guid.NewGuid().ToString(),
+                                tc.function?.name,
+                                arguments: null);
+
+                            if (tc.function?.arguments != null)
+                            {
+                                fc.AdditionalProperties["_rawArguments"] = tc.function.arguments;
+                            }
+
+                            contents.Add(fc);
+                        }
+                    }
+                    if (contents.Count > 0)
+                    {
+                        update.Contents = contents;
+                    }
+                }
+
+                if (update.Text != null || (update.Contents?.Count > 0))
+                {
+                    yield return update;
+                }
             }
         }
     }
@@ -281,5 +317,19 @@ internal sealed class OpenAIChatClient : IChatClient
     private sealed class Delta
     {
         public string? content { get; set; }
+        public ToolCallDelta[]? tool_calls { get; set; }
+    }
+
+    private sealed class ToolCallDelta
+    {
+        public string? id { get; set; }
+        public string? type { get; set; }
+        public FunctionDelta? function { get; set; }
+    }
+
+    private sealed class FunctionDelta
+    {
+        public string? name { get; set; }
+        public string? arguments { get; set; }
     }
 }

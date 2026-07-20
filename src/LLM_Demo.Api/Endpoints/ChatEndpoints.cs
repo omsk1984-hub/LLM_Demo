@@ -127,14 +127,29 @@ public sealed class ChatEndpoints
                 });
                 await WriteSseAsync(httpContext, "chunk", json);
 
+                // Tool call чанки — не добавляем в текст ответа ассистента
+                if (chunk.ToolCallId != null)
+                {
+                    _logger.LogDebug("Tool call {ToolCallId} result streamed", chunk.ToolCallId);
+                    continue;
+                }
+
+                // Ошибка — логируем, не добавляем в responseBuilder
+                if (chunk.Error != null)
+                {
+                    _logger.LogWarning("Streaming error: {Error}", chunk.Error);
+                    continue;
+                }
+
+                // Обычный текстовый чанк — добавляем в ответ
                 if (!chunk.IsFinal)
                 {
                     responseBuilder.Append(chunk.Content);
                 }
 
+                // Финальный чанк — сохраняем ответ ассистента в БД
                 if (chunk.IsFinal)
                 {
-                    // Сохраняем ответ ассистента в БД
                     var assistantMessage = new Message
                     {
                         Id = Guid.NewGuid(),
