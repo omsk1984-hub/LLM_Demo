@@ -132,49 +132,19 @@ public sealed class DocumentService
     /// </summary>
     private static List<Chunk> ChunkText(string text, int maxTokens = 500, int overlapTokens = 50)
     {
-        const int charsPerToken = 4;
-        var maxChars = maxTokens * charsPerToken;
-        var overlapChars = overlapTokens * charsPerToken;
-
         var chunks = new List<Chunk>();
-
-        if (text.Length <= maxChars)
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length > 0)
         {
-            chunks.Add(new Chunk(0, text));
+            foreach (var line in lines)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    chunks.Add(new Chunk(chunks.Count, line.Trim()));
+                }
+            }
             return chunks;
         }
-
-        var start = 0;
-        var index = 0;
-
-        while (start < text.Length)
-        {
-            var end = Math.Min(start + maxChars, text.Length);
-
-            // Try to break at a sentence boundary or newline
-            if (end < text.Length)
-            {
-                var searchEnd = Math.Min(end + 100, text.Length);
-                var lastNewline = text.LastIndexOf('\n', end, 100);
-                var lastPeriod = text.LastIndexOf('.', end, 100);
-                var breakAt = Math.Max(lastNewline, lastPeriod);
-
-                if (breakAt > start)
-                    end = breakAt + 1;
-            }
-
-            var chunkText = text[start..end];
-            chunks.Add(new Chunk(index, chunkText.Trim()));
-
-            // If we've reached the end of text, stop to avoid infinite loop
-            if (end >= text.Length)
-                break;
-
-            // Move start back by overlap amount
-            start = end - overlapChars;
-            index++;
-        }
-
         return chunks;
     }
 
