@@ -6,6 +6,9 @@ using LLM_Demo.Domain.Messages;
 using LLM_Demo.Domain.Tools;
 using LLM_Demo.Domain.Users;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Pgvector;
 
 namespace LLM_Demo.Infrastructure.Persistence;
 
@@ -136,7 +139,18 @@ public sealed class AppDbContext : DbContext
             entity.Property(c => c.Content).HasMaxLength(65535).IsRequired();
             entity.Property(c => c.ChunkIndex);
 
-            entity.Property(c => c.Embedding).HasColumnType("vector(1536)");
+            entity.Property(c => c.Embedding)
+                  .HasColumnType("vector(1536)")
+                  .HasConversion(
+                      new ValueConverter<float[]?, Vector?>(
+                          v => v == null ? null : new Vector(v),
+                          v => v == null ? null : v.ToArray()))
+                  .Metadata.SetValueComparer(
+                      new ValueComparer<float[]?>(
+                          (c1, c2) => c1 == null && c2 == null
+                                      || c1 != null && c2 != null && c1.SequenceEqual(c2),
+                          c => c == null ? 0 : c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                          c => c == null ? null : c.ToArray()));
 
             entity.HasIndex(c => c.DocumentId);
         });

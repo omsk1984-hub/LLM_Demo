@@ -17,6 +17,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Pgvector.EntityFrameworkCore;
 
 public static class InfrastructureServiceRegistration
 {
@@ -28,7 +29,11 @@ public static class InfrastructureServiceRegistration
         services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(
                 configuration.GetConnectionString("DefaultConnection"),
-                npgsql => npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName)));
+                npgsql =>
+                {
+                    npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
+                    npgsql.UseVector();
+                }));
 
         // Repositories
         services.AddScoped<AgentRepository>();

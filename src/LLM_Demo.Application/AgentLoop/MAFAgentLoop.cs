@@ -217,7 +217,7 @@ public sealed class MAFAgentLoop : IAgentLoop
                             }
 
                             // Фрагменты аргументов приходят через AdditionalProperties["_rawArguments"]
-                            if (fc.AdditionalProperties.TryGetValue("_rawArguments", out var rawArg) &&
+                            if (fc.AdditionalProperties?.TryGetValue("_rawArguments", out var rawArg) == true &&
                                 rawArg is string argFragment &&
                                 !string.IsNullOrEmpty(argFragment))
                             {
