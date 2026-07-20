@@ -18,7 +18,7 @@ Authorization: Bearer {{login.response.body.$.token}}
 ### Upload random-people.jsonl as a document
 POST {{LLM_Demo.Api_HostAddress}}/api/agents/{{AgentId}}/documents?name=random-people.jsonl
 Content-Type: text/plain
-Authorization: Bearer {{login.response.body.$.token}}
+Authorization: Bearer {{token}}
 
 {"name":"Алиса Воронцова","height_cm":168,"weight_kg":58,"age":29,"city":"Москва","profession":"UX-дизайнер"}
 {"name":"Дмитрий Ковалёв","height_cm":183,"weight_kg":79,"age":34,"city":"Санкт-Петербург","profession":"DevOps-инженер"}

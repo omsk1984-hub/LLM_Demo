@@ -44,7 +44,8 @@ internal sealed class OpenAIEmbeddingClient : IEmbeddingClient
         var requestBody = new
         {
             model = _modelId,
-            input = textsList.Count == 1 ? textsList[0] : (object)textsList
+            input = textsList.Count == 1 ? textsList[0] : (object)textsList,
+            dimensions = Dimensions
         };
 
         var json = JsonSerializer.Serialize(requestBody);
