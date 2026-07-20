@@ -6,9 +6,11 @@ using LLM_Demo.Api.Extensions;
 using LLM_Demo.Api.Models.Requests;
 using LLM_Demo.Api.Models.Responses;
 using LLM_Demo.Application.AgentLoop;
+using LLM_Demo.Application.Middleware;
 using LLM_Demo.Domain.Agents;
 using LLM_Demo.Domain.Connectors;
 using LLM_Demo.Domain.Messages;
+using LLM_Demo.Domain.Middleware;
 using LLM_Demo.Domain.Tools;
 using LLM_Demo.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.AI;
@@ -18,6 +20,7 @@ public sealed class ChatEndpoints
     private readonly AgentRepository _agentRepository;
     private readonly ConversationRepository _conversationRepository;
     private readonly IConnectorProvider _connectorProvider;
+    private readonly ToolMiddlewarePipeline _toolPipeline;
     private readonly ILogger<ChatEndpoints> _logger;
     private readonly ILogger<MAFAgentLoop> _loopLogger;
 
@@ -25,12 +28,14 @@ public sealed class ChatEndpoints
         AgentRepository agentRepository,
         ConversationRepository conversationRepository,
         IConnectorProvider connectorProvider,
+        ToolMiddlewarePipeline toolPipeline,
         ILogger<ChatEndpoints> logger,
         ILogger<MAFAgentLoop> loopLogger)
     {
         _agentRepository = agentRepository;
         _conversationRepository = conversationRepository;
         _connectorProvider = connectorProvider;
+        _toolPipeline = toolPipeline;
         _logger = logger;
         _loopLogger = loopLogger;
     }
@@ -111,7 +116,16 @@ public sealed class ChatEndpoints
 
         var loop = new MAFAgentLoop(
             _connectorProvider,
-            (toolCall, agent, ct) => Task.FromResult(ToolResult.Success($"Executed {toolCall.Name}")),
+            async (toolCall, agent, ct) =>
+            {
+                var context = new ToolMiddlewareContext
+                {
+                    ToolCall = toolCall,
+                    Agent = agent,
+                    CancellationToken = ct
+                };
+                return await _toolPipeline.ExecuteAsync(context);
+            },
             _loopLogger);
 
         try

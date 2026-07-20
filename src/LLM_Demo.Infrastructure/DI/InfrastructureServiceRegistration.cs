@@ -1,9 +1,11 @@
 namespace LLM_Demo.Infrastructure.DI;
 
 using LLM_Demo.Domain.Connectors;
+using LLM_Demo.Domain.Middleware;
 using LLM_Demo.Domain.Tools;
 using LLM_Demo.Infrastructure.Auth;
 using LLM_Demo.Infrastructure.Connectors;
+using LLM_Demo.Infrastructure.Middleware;
 using LLM_Demo.Infrastructure.Persistence;
 using LLM_Demo.Infrastructure.Persistence.Repositories;
 using LLM_Demo.Infrastructure.Tools;
@@ -42,12 +44,20 @@ public static class InfrastructureServiceRegistration
         services.AddSingleton(jwtOptions);
         services.AddSingleton<JwtTokenService>();
 
+        // Tool Definitions — регистрируем статические определения инструментов
+        services.AddSingleton<ToolDefinition>(CalculatorTool.Definition);
+        services.AddSingleton<ToolDefinition>(FileSystemTool.Definition);
+        services.AddSingleton<ToolDefinition>(SendSafetyTool.Definition);
+
         // Tool Registry
         services.AddSingleton<IToolRegistry>(sp =>
         {
             var tools = sp.GetServices<ToolDefinition>();
             return new ToolRegistry(tools);
         });
+
+        // Tool Dispatcher — диспетчеризация вызовов инструментов
+        services.AddSingleton<IToolDispatcher, ToolDispatcher>();
 
         // LLM Providers — регистрируем ConnectorProvider как singleton
         services.AddSingleton<IConnectorProvider>(sp =>
