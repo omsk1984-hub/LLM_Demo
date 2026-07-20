@@ -9,7 +9,7 @@
 ### 1. Запустить PostgreSQL через Docker
 
 ```bash
-docker compose up -d
+docker compose -f docker/docker-compose.yml up -d
 ```
 
 ### 2. Запустить API
@@ -41,8 +41,13 @@ curl http://localhost:5023/api/agents \
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    LLM_Demo.Api (Minimal API)               │
-│  JWT Auth · SSE Streaming · Swagger · Ownership Middleware  │
+│          LLM_Demo.Frontend (React + Vite + Tailwind CSS)    │
+│  SPA · SSE Client · JWT Auth · Axios · React Router         │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
+│                    LLM_Demo.Api (Minimal API)                │
+│  JWT Auth · SSE Streaming · Swagger · Ownership Middleware   │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
@@ -53,7 +58,7 @@ curl http://localhost:5023/api/agents \
 ┌─────────────────────▼───────────────────────────────────────┐
 │               LLM_Demo.Infrastructure (Services)             │
 │  EF Core + PostgreSQL · JWT · Quartz.NET · ConnectorProvider│
-│  Tools: SendSafety · Calculator · FileSystem · WebSearch    │
+│  Tools: SendSafety · Calculator · FileSystem │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
@@ -90,21 +95,51 @@ var result = await loop.ExecuteAsync(conversation, agent);
 
 ### SSE Streaming
 
+Потоковая передача ответа LLM через Server-Sent Events. Клиент сначала отправляет сообщение через `POST`, получает `202 Accepted` с URL на SSE-поток, затем подключается к этому потоку.
+
 ```
-GET /api/chat/{agentId}/stream?conversationId=xxx
+POST /api/chat/{agentId} (JSON) → 202 Accepted + Location: /api/chat/{agentId}/stream?conversationId=xxx
+GET /api/chat/{agentId}/stream?conversationId=xxx&token=<JWT>
 → event: chunk  data: {"content":"Hello","isFinal":false}
 → event: chunk  data: {"content":" world","isFinal":false}
-→ event: complete  data: {"isFinal":true}
+→ event: complete  data: {}
 ```
+
+Токен авторизации передаётся в query-параметре `token`, т.к. `EventSource` API не поддерживает кастомные HTTP-заголовки (`Authorization: Bearer ...`).
+
+Дополнительные SSE-события:
+
+| Событие | Описание |
+|---------|----------|
+| `chunk` | Очередной чанк стриминга (текст или tool call) |
+| `complete` | Стриминг завершён, ответ ассистента сохранён |
+| `cancelled` | Клиент разорвал соединение |
+| `error` | Ошибка сервера (текст ошибки в `data`) |
 
 ### Connectors
 
-```csharp
-// IConnectorProvider — единый интерфейс для разных LLM
-provider.GetClient("openai");    // OpenAI API
-provider.GetClient("ollama");    // Локальная Ollama
-provider.GetClient("azure");     // Azure OpenAI
+Все LLM-провайдеры (OpenAI, Ollama, Azure и др.) регистрируются через [`OpenAIConnectorFactory`](src/LLM_Demo.Infrastructure/Connectors/OpenAIConnector.cs), который создаёт `IChatClient` поверх `HttpClient`. Каждый провайдер конфигурируется в секции `LLMProviders` в [`appsettings.json`](src/LLM_Demo.Api/appsettings.json):
+
+```json
+{
+  "LLMProviders": {
+    "openai": { "Endpoint": "https://api.openai.com/v1", "ModelId": "gpt-4", "ApiKey": "..." },
+    "ollama": { "Endpoint": "http://localhost:11434/v1", "ModelId": "llama3" },
+    "azure":  { "Endpoint": "https://xxx.openai.azure.com", "ModelId": "gpt-4", "ApiKey": "..." }
+  }
+}
 ```
+
+Единый интерфейс для всех провайдеров:
+
+```csharp
+// IConnectorProvider — получение IChatClient по имени провайдера
+provider.GetClient("openai");
+provider.GetClient("ollama");
+provider.GetClient("azure");
+```
+
+Если ни один LLM-провайдер не настроен, автоматически подключается [`EchoChatClient`](src/LLM_Demo.Api/Endpoints/ChatEndpoints.cs) — fallback, который возвращает введённый пользователем текст с префиксом `"Echo: "`.
 
 ---
 
@@ -149,6 +184,12 @@ provider.GetClient("azure");     // Azure OpenAI
 |--------|------|----------|
 | GET | `/api/tools` | Список доступных инструментов |
 
+### Connectors (LLM-провайдеры)
+
+| Method | Path | Описание |
+|--------|------|----------|
+| GET | `/api/connectors` | Список доступных LLM-провайдеров |
+
 ---
 
 ## 🛠️ Технический стек
@@ -179,7 +220,7 @@ services:
       POSTGRES_USER: llm_demo_user
       POSTGRES_PASSWORD: llm_demo_pass
     ports:
-      - "5432:5432"
+      - "5434:5432"
 
   postgres-orleans:
     image: postgres:16
@@ -188,7 +229,7 @@ services:
       POSTGRES_USER: orleans_user
       POSTGRES_PASSWORD: orleans_pass
     ports:
-      - "5433:5432"
+      - "5435:5432"
 ```
 
 ---
@@ -198,6 +239,14 @@ services:
 В проекте используется **Entity Framework Core** с **PostgreSQL**. Миграции создаются в проекте [`LLM_Demo.Infrastructure`](src/LLM_Demo.Infrastructure), а применяются автоматически при запуске API через `DbSeeder.SeedAsync()`.
 
 ### Установка инструмента
+
+В проекте используется локальный манифест `.config/dotnet-tools.json`, поэтому предпочтительный способ:
+
+```bash
+dotnet tool restore
+```
+
+Либо глобальная установка:
 
 ```bash
 dotnet tool install --global dotnet-ef
@@ -313,6 +362,16 @@ LLM_Demo/
 │   │   ├── Grains/                # AgentGrain, ConversationGrain, SubAgentGrain
 │   │   └── Configuration/         # OrleansConfigurator
 │   │
+│   ├── LLM_Demo.Frontend/         # React SPA (Vite + Tailwind CSS)
+│   │   ├── src/
+│   │   │   ├── api/               # Axios client, chat SSE, auth
+│   │   │   ├── components/        # ChatMessages, MessageBubble, ChatInput, etc.
+│   │   │   ├── hooks/             # useChatSSE
+│   │   │   ├── context/           # AuthContext
+│   │   │   ├── pages/             # ChatPage, LoginPage, RegisterPage
+│   │   │   └── types/             # TypeScript types
+│   │   └── vite.config.ts
+│   │
 │   └── LLM_Demo.Api/              # Minimal API
 │       ├── Endpoints/             # Auth, Agent, Conversation, Chat
 │       ├── Middleware/            # ExceptionHandlingMiddleware
@@ -322,7 +381,8 @@ LLM_Demo/
 ├── tests/
 │   └── LLM_Demo.Tests/            # 27 unit-тестов
 │
-├── docker-compose.yml             # PostgreSQL + Orleans DB
+├── docker/
+│   └── docker-compose.yml         # PostgreSQL + Orleans DB
 ├── plans/
 │   └── project-plan.md            # Детальный план с диаграммами
 └── README.md                      # Этот файл
@@ -335,32 +395,59 @@ LLM_Demo/
 ```mermaid
 sequenceDiagram
     participant User
-    participant API
+    participant API as LLM_Demo.Api
+    participant DB as PostgreSQL
+    participant SSE as SSE Stream
     participant AgentLoop as MAFAgentLoop
     participant LLM as IChatClient
-    participant Pipeline as Middleware Pipeline
-    participant Tool as Executor
 
-    User->>API: POST /chat/{agentId}
-    API->>AgentLoop: ExecuteAsync()
+    User->>API: POST /chat/{agentId} (JSON)
+    activate API
+    API->>DB: Save user message
+    DB-->>API: Saved
+    API-->>User: 202 Accepted + Location: /stream?conversationId=xxx
+    deactivate API
+
+    User->>API: GET /chat/{agentId}/stream?conversationId=xxx
+    activate API
+    API->>SSE: text/event-stream
     
     loop MaxIterations
         AgentLoop->>LLM: CompleteAsync(history)
-        LLM-->>AgentLoop: ChatResponse
+        LLM-->>AgentLoop: StreamingChatCompletionUpdate
         
         alt Tool Call detected
-            AgentLoop->>Pipeline: Execute(ToolCall)
-            Pipeline->>Pipeline: Logging → Filtering → Safety
-            Pipeline->>Tool: Invoke
-            Tool-->>Pipeline: ToolResult
-            Pipeline-->>AgentLoop: Result
-            
+            AgentLoop->>AgentLoop: Execute tool via MiddlewarePipeline
+            AgentLoop->>SSE: event: chunk (tool call)
             AgentLoop->>LLM: Send result back
+        else Text Chunk
+            AgentLoop->>SSE: event: chunk {"content":"...","isFinal":false}
         else Final Response
-            AgentLoop-->>API: AgentLoopResult
-            API-->>User: JSON Response
+            AgentLoop->>DB: Save assistant message
+            AgentLoop->>SSE: event: complete {}
+            API-->>User: SSE stream closed
         end
     end
+
+    Note over User,API: Client closes connection → SSE fires cancelled
+    API->>SSE: event: cancelled {}
+```
+
+---
+
+## 📜 Вспомогательные скрипты
+
+| Скрипт | Назначение |
+|--------|------------|
+| [`run.cmd`](run.cmd) | Полный stack: устанавливает npm-зависимости фронтенда, запускает API (`dotnet run`) и Frontend (`npm run dev`) в отдельных окнах терминалов |
+| [`run_api.cmd`](run_api.cmd) | Запуск только API: `dotnet run --project src/LLM_Demo.Api` |
+| [`run_front.cmd`](run_front.cmd) | Запуск только Frontend: `npm run dev` в директории `src/LLM_Demo.Frontend` |
+| [`run_migration.cmd`](run_migration.cmd) | Применение миграций EF Core к БД (восстанавливает `dotnet-ef` из локального манифеста и выполняет `dotnet ef database update`) |
+
+Перед первым запуском убедитесь, что PostgreSQL запущен (см. шаг 1 Быстрого старта). Для полного запуска достаточно выполнить:
+
+```cmd
+run.cmd
 ```
 
 ---
