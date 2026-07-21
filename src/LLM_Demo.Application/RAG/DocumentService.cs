@@ -40,13 +40,8 @@ public sealed class DocumentService
         if (string.IsNullOrWhiteSpace(content))
             throw new ArgumentException("Document content cannot be empty", nameof(content));
 
-        _logger.LogInformation($"1111");
         // 1. Split document into chunks
         var chunks = ChunkText(content);
-        _logger.LogInformation($"2222 - {chunks.Count}");
-        _logger.LogInformation($"0 - {chunks[0]}");
-        _logger.LogInformation($"1 - {chunks[1]}");
-        _logger.LogInformation($"2 - {chunks[2]}");
 
         _logger.LogInformation(
             "Uploading document '{Name}' for agent {AgentId}: {TotalChars} chars -> {ChunkCount} chunks",
